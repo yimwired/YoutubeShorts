@@ -1,0 +1,16 @@
+anthropic
+moviepy
+ffmpeg-python
+requests
+python-dotenv
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+notion-client
+Pillow
+apscheduler
+edge-tts
+faster-whisper
+pythainlp
+numpy
+tqdm

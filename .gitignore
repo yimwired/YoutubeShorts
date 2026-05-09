@@ -1,0 +1,33 @@
+# Secrets
+.env
+token_youtube.json
+client_secrets.json
+
+# Video output (large files)
+output/
+*.mp4
+*.mp3
+*.wav
+
+# Queue state (regenerated each run)
+queue/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.DS_Store
+
+# Models cache
+.cache/
+
+# Logs
+*.log
+
+# Claude Code settings
+.claude/
+
+# Misc
+processed_image*
