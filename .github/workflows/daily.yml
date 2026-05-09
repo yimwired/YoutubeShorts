@@ -36,7 +36,15 @@ jobs:
           path: ~/.cache/huggingface
           key: whisper-tiny
 
-      - name: Write secrets to files
+      - name: Write YouTube credential files
+        env:
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+          YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
+        run: |
+          printf '%s' "$YOUTUBE_TOKEN" > token_youtube.json
+          printf '%s' "$YOUTUBE_CLIENT_SECRETS" > client_secrets.json
+
+      - name: Generate & upload videos
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -47,22 +55,6 @@ jobs:
           TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_VIDEO_LOG_DB_ID: ${{ secrets.NOTION_VIDEO_LOG_DB_ID }}
-          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
-          YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
-        run: |
-          printf 'GROQ_API_KEY=%s\n' "$GROQ_API_KEY" > .env
-          printf 'PEXELS_API_KEY=%s\n' "$PEXELS_API_KEY" >> .env
-          printf 'PIXABAY_API_KEY=%s\n' "$PIXABAY_API_KEY" >> .env
-          printf 'YOUTUBE_CLIENT_ID=%s\n' "$YOUTUBE_CLIENT_ID" >> .env
-          printf 'YOUTUBE_CLIENT_SECRET=%s\n' "$YOUTUBE_CLIENT_SECRET" >> .env
-          printf 'TIKTOK_CLIENT_KEY=%s\n' "$TIKTOK_CLIENT_KEY" >> .env
-          printf 'TIKTOK_CLIENT_SECRET=%s\n' "$TIKTOK_CLIENT_SECRET" >> .env
-          printf 'NOTION_TOKEN=%s\n' "$NOTION_TOKEN" >> .env
-          printf 'NOTION_VIDEO_LOG_DB_ID=%s\n' "$NOTION_VIDEO_LOG_DB_ID" >> .env
-          printf '%s' "$YOUTUBE_TOKEN" > token_youtube.json
-          printf '%s' "$YOUTUBE_CLIENT_SECRETS" > client_secrets.json
-
-      - name: Generate & upload videos
         run: python generate_batch.py 3
 
       - name: Commit updated topic history
