@@ -1,23 +1,26 @@
 import random
+import requests
+import xml.etree.ElementTree as ET
+
 
 def get_trending_topic() -> str | None:
-    """Fetch a trending topic from Thailand + Global Google Trends. Returns None on failure."""
-    try:
-        from pytrends.request import TrendReq
-        pytrends = TrendReq(hl='en-US', tz=420, timeout=(10, 25))
+    """Fetch a trending topic from Google Trends RSS (US + TH). Returns None on failure."""
+    feeds = [
+        "https://trends.google.com/trending/rss?geo=US",
+        "https://trends.google.com/trending/rss?geo=TH",
+    ]
+    topics = []
+    for url in feeds:
+        try:
+            r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            root = ET.fromstring(r.content)
+            for item in root.findall(".//item/title"):
+                if item.text and len(item.text) > 2:
+                    topics.append(item.text.strip())
+        except Exception:
+            pass
 
-        topics = []
-        for region in ['thailand', 'united_states']:
-            try:
-                df = pytrends.trending_searches(pn=region)
-                topics += df[0].tolist()[:15]
-            except Exception:
-                pass
-
-        topics = [t for t in topics if isinstance(t, str) and len(t) > 2]
-        if topics:
-            pick = random.choice(topics[:25])
-            return pick
-    except Exception:
-        pass
+    if topics:
+        return random.choice(topics[:30])
     return None
