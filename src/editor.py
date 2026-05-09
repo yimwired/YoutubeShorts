@@ -3,9 +3,10 @@ import re
 import tempfile
 import os
 
-FONT_EN   = "C\\:/Windows/Fonts/impact.ttf"
-FONT_TH   = "G\\:/YoutubeShorts/Kanit-Bold.ttf"
-LOGO_PATH = "G:/YoutubeShorts/logo.png"
+_BASE     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FONT_TH   = os.path.join(_BASE, "Kanit-Bold.ttf")
+FONT_EN   = "C:/Windows/Fonts/impact.ttf" if os.name == "nt" else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+LOGO_PATH = os.path.join(_BASE, "logo.png")
 WORD_GAP  = 0.07
 
 # Color scheme: white normal, red for emphasis (every ~5th word or last word of sentence)

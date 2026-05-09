@@ -3,8 +3,9 @@ import requests
 import subprocess
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-FONT_IMPACT = "C:/Windows/Fonts/impact.ttf"
-FONT_BOLD   = "C:/Windows/Fonts/arialbd.ttf"
+_BASE       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FONT_IMPACT = "C:/Windows/Fonts/impact.ttf" if os.name == "nt" else os.path.join(_BASE, "Kanit-Bold.ttf")
+FONT_BOLD   = "C:/Windows/Fonts/arialbd.ttf" if os.name == "nt" else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 PEXELS_KEY  = os.getenv("PEXELS_API_KEY")
 
 W, H = 1080, 1920
