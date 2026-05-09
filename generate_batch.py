@@ -33,6 +33,7 @@ QUEUE_DIR  = "queue"
 BKK        = ZoneInfo("Asia/Bangkok")
 POST_HOURS = [8, 12, 19]
 
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(QUEUE_DIR, exist_ok=True)
 
 
