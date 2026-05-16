@@ -276,6 +276,10 @@ def run_pipeline():
     desc_th     = data.get("description_th", script_th)
     hashtags_en = data.get("hashtags", ["shorts", "facts", "didyouknow"])
     hashtags_th = data.get("hashtags_th", ["shorts", "เรื่องน่ารู้", "ความรู้"])
+    if isinstance(hashtags_en, str):
+        hashtags_en = [h.strip().lstrip("#") for h in hashtags_en.replace(",", " ").split() if h.strip()]
+    if isinstance(hashtags_th, str):
+        hashtags_th = [h.strip().lstrip("#") for h in hashtags_th.replace(",", " ").split() if h.strip()]
 
     # Ensure #shorts always present
     if "shorts" not in [h.lower() for h in hashtags_en]:
