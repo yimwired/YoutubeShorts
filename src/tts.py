@@ -4,16 +4,14 @@ import edge_tts
 from edge_tts.exceptions import NoAudioReceived
 
 _RETRY_ATTEMPTS = 3
-_RETRY_DELAY    = 3  # seconds between retries
+_RETRY_DELAY    = 3
 
 
 async def _edge_stream(script: str, voice: str, rate: str,
                        audio_path: str) -> list[dict]:
-    """Returns sentence boundary timestamps [{start, end}] from TTS engine."""
     comm = edge_tts.Communicate(script, voice, rate=rate)
     audio_buf  = bytearray()
     boundaries = []
-
     async for chunk in comm.stream():
         if chunk["type"] == "audio":
             audio_buf.extend(chunk["data"])
@@ -22,7 +20,6 @@ async def _edge_stream(script: str, voice: str, rate: str,
                 "start": chunk["offset"] / 10_000_000,
                 "end":   (chunk["offset"] + chunk["duration"]) / 10_000_000,
             })
-
     with open(audio_path, "wb") as f:
         f.write(bytes(audio_buf))
     return boundaries
@@ -41,17 +38,20 @@ def _run_with_retry(script: str, voice: str, rate: str,
                 raise
 
 
+def _gtts_thai(script: str, audio_path: str):
+    from gtts import gTTS
+    gTTS(text=script, lang="th", slow=False).save(audio_path)
+
+
 def generate_voiceover(script: str, output_path: str,
                        lang: str = "en") -> tuple[str, list[dict]]:
     """
-    EN: edge-tts en-US-GuyNeural (natural male, no rate change)
-    TH: edge-tts th-TH-PremwadeeNeural 1.1x — retries up to 3x on NoAudioReceived
+    EN : edge-tts en-US-GuyNeural
+    TH : gTTS (Google TTS Thai) — ฟังดูธรรมชาติกว่าสำหรับภาษาไทย
     """
     if lang == "th":
-        boundaries = _run_with_retry(
-            script=script, voice="th-TH-PremwadeeNeural",
-            rate="+10%", audio_path=output_path)
-        return output_path, boundaries
+        _gtts_thai(script, output_path)
+        return output_path, []
     else:
         _run_with_retry(script=script, voice="en-US-GuyNeural",
                         rate="+0%", audio_path=output_path)

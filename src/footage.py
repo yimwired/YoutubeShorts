@@ -49,9 +49,7 @@ def _pexels(keyword: str, output_path: str) -> str | None:
     if not candidates:
         return None
     candidates.sort(reverse=True)
-    # Pick randomly from top 3 for variety
-    top = candidates[:3]
-    return _download(random.choice(top)[1], output_path)
+    return _download(candidates[0][1], output_path)
 
 
 def _pixabay(keyword: str, output_path: str) -> str | None:

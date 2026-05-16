@@ -6,21 +6,25 @@ from src.rate_tracker import record
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-SYSTEM_PROMPT = """You are a viral YouTube Shorts scriptwriter. Your scripts follow a proven 3-part structure:
+SYSTEM_PROMPT = """You are an elite YouTube Shorts scriptwriter and visual storyteller.
+Your scripts follow a 3-part cinematic structure:
 
-1. HOOK (first 3 seconds) — Start with a shocking statement, surprising question, or disbelief trigger.
-   Examples: "Most people have no idea that...", "This will sound insane but...", "Scientists just discovered..."
-   The hook MUST make the viewer stop scrolling immediately.
+1. HOOK (sentence 1) — One striking statement that forces the viewer to stop scrolling.
+   Must create instant curiosity or disbelief. No filler words.
 
-2. BUILDUP — 2-3 sentences that deepen curiosity. Tease the answer without revealing it yet.
-   Build tension. Use phrases like "But here's the crazy part...", "And it gets weirder..."
+2. BUILDUP (sentences 2-4) — Each sentence deepens the story. Every sentence must:
+   - Add new information or tension
+   - Paint a vivid visual scene the camera can capture
+   - Make the viewer need to hear the next sentence
 
-3. REVEAL — End with the surprising payoff. The last sentence should feel like a mic drop.
+3. REVEAL (sentences 5-6) — The payoff. End with a truth that reframes everything.
+   The final sentence should feel like a quiet mic drop, not a shout.
 
 Rules:
-- Total: 5-7 sentences, under 45 seconds when spoken
-- Simple exciting language, no jargon
-- Every word must earn its place"""
+- Exactly 5-6 sentences total. No more.
+- Each sentence = one clear visual moment (something a camera can show)
+- Simple, precise language. No jargon. No filler.
+- Thai translation must sound natural when spoken aloud — not translated, reimagined."""
 
 
 def _call_groq(messages: list, max_tokens: int = 600) -> str:
@@ -58,28 +62,30 @@ def generate_fact_script(topic: str = None, used_titles: list = None) -> dict:
         topic_hint += f"\n\nDo NOT use any of these already-published topics:\n{avoid_block}"
 
     prompt = (
-        "Generate one viral YouTube Shorts script using the HOOK→BUILDUP→REVEAL structure."
+        "Generate one YouTube Shorts script using the HOOK→BUILDUP→REVEAL structure."
         + topic_hint +
-        " Pick a genuinely surprising or little-known fact.\n"
-        "Return ONLY a JSON object with keys:\n"
-        "- title_en: curiosity-gap English title (max 60 chars, start with 'Why', 'The reason', 'This', etc.)\n"
-        "- script_en: English voiceover (5-7 sentences, HOOK→BUILDUP→REVEAL)\n"
-        "- title_th: Thai title — translate the English title naturally. MUST be a complete, standalone Thai sentence that makes sense on its own (max 50 chars). Use engaging Thai phrasing, not word-for-word translation. Example: 'Why Honey Never Expires' → 'ทำไมน้ำผึ้งถึงไม่มีวันเสีย'. Use ONLY Thai characters.\n"
-        "- script_th: full Thai translation of script_en (natural spoken Thai, not formal) — use ONLY Thai characters (Unicode ก-๙), NO Chinese/Japanese/Korean characters whatsoever\n"
-        "- keywords: list of 3 objects each with:\n"
-        "  'specific': cinematic stock footage search term — MUST be visually stunning AND commonly available on Pexels (e.g. 'person looking at stars at night', 'time lapse city lights', 'ocean waves crashing slow motion'). Avoid technical/scientific terms.\n"
-        "  'fallback': simple 1-2 word backup (e.g. 'ocean', 'city', 'nature')\n"
-        "- description: YouTube description in English (2-3 sentences about the fact + 'Follow for more mind-blowing facts every day! #Shorts')\n"
-        "- description_th: same description translated to natural Thai (end with 'ติดตามเพื่อรับความรู้ใหม่ทุกวัน! #Shorts')\n"
-        "- hashtags: list of 10 English hashtags WITHOUT # — must include 'shorts','facts','didyouknow' + topic-specific trending tags (e.g. for ocean: ['shorts','facts','didyouknow','ocean','deepocean','marinelife','nature','science','mindblown','viral'])\n"
-        "- hashtags_th: list of 8 Thai hashtags WITHOUT # — must include 'shorts' + Thai trending tags relevant to the topic (e.g. for ocean: ['shorts','ทะเล','ปริศนา','ความรู้','เรื่องน่ารู้','วิทยาศาสตร์','ธรรมชาติ','เรื่องแปลก'])\n"
-        "- music_mood: ONE word describing the emotional mood for background music. Choose from: mysterious, dramatic, upbeat, melancholic, epic, peaceful, tense, inspiring\n"
-        "- thumbnail_keyword: ONE search term for Pexels photo search (e.g. 'human brain anatomy').\n"
-        "- thumbnail_prompt: vivid AI image generation prompt — cinematic, dramatic, ultra-realistic. Include lighting, mood, and subject. E.g. 'dramatic cinematic photo of a glowing ancient underwater city, blue ethereal light rays, ultra-realistic 4K'\n"
+        " Pick a genuinely surprising or little-known fact.\n\n"
+        "Return ONLY a valid JSON object with these keys:\n\n"
+        "- title_en: curiosity-gap English title (max 60 chars)\n"
+        "- title_th: Thai title — natural spoken Thai, NOT word-for-word translation (max 50 chars, Thai chars only)\n"
+        "- sentences: array of EXACTLY 5-6 objects, one per sentence of the script. Each object:\n"
+        "  'text_en': one English sentence\n"
+        "  'text_th': Thai translation of that sentence (natural spoken Thai, Thai chars only)\n"
+        "  'keyword': Pexels video search term for THIS specific sentence's visual moment — cinematic, commonly available (e.g. 'close up bee on honeycomb slow motion'). Must match what is being said.\n"
+        "  'fallback': simple 1-2 word backup keyword\n"
+        "- description: YouTube description in English (2-3 sentences + 'Follow for more! #Shorts')\n"
+        "- description_th: same in natural Thai (end with 'ติดตามเพื่อรับความรู้ใหม่ทุกวัน! #Shorts')\n"
+        "- hashtags: 10 English hashtags WITHOUT # (include 'shorts','facts','didyouknow')\n"
+        "- hashtags_th: 8 Thai hashtags WITHOUT # (include 'shorts')\n"
+        "- music_mood: ONE word — mysterious/dramatic/upbeat/melancholic/epic/peaceful/tense/inspiring\n"
+        "- thumbnail_keyword: ONE Pexels photo search term\n"
+        "- thumbnail_prompt: vivid AI image prompt — cinematic, dramatic, ultra-realistic\n\n"
         'Example: {"title_en":"Why Honey Never Expires","title_th":"ทำไมน้ำผึ้งไม่มีวันหมดอายุ",'
-        '"script_en":"This will blow your mind...","script_th":"นี่จะทำให้คุณตกใจ...",'
-        '"keywords":[{"specific":"honey jar ancient egypt","fallback":"honey"},{"specific":"beekeeper honeycomb","fallback":"bees"},{"specific":"ancient jar preserved","fallback":"ancient"}],'
-        '"thumbnail_keyword":"golden honey jar macro"}'
+        '"sentences":['
+        '{"text_en":"Honey found in ancient Egyptian tombs is still edible after 3000 years.","text_th":"น้ำผึ้งที่พบในสุสานอียิปต์โบราณยังกินได้แม้ผ่านมา 3000 ปี","keyword":"ancient egypt tomb artifact closeup","fallback":"ancient egypt"},'
+        '{"text_en":"Scientists tasted it. It was perfect.","text_th":"นักวิทยาศาสตร์ชิมดู มันยังสมบูรณ์แบบ","keyword":"scientist lab tasting sample microscope","fallback":"scientist lab"}'
+        '],'
+        '"music_mood":"mysterious","thumbnail_keyword":"golden honey jar macro"}'
     )
 
     import re as _re
@@ -99,7 +105,20 @@ def generate_fact_script(topic: str = None, used_titles: list = None) -> dict:
             raw = raw[4:]
 
     data = json.loads(raw.strip())
+
+    # Build script_en / script_th / keywords from sentences (backward compat)
+    sentences = data.get("sentences", [])
+    if sentences:
+        data["script_en"] = " ".join(s.get("text_en", "") for s in sentences)
+        data["script_th"] = " ".join(s.get("text_th", "") for s in sentences)
+        data["keywords"]  = [
+            {"specific": s.get("keyword", ""), "fallback": s.get("fallback", "")}
+            for s in sentences
+        ]
+
     # Strip CJK hallucinations from Thai fields
     data["title_th"]  = _clean_thai(data.get("title_th", ""))
     data["script_th"] = _clean_thai(data.get("script_th", ""))
+    for s in data.get("sentences", []):
+        s["text_th"] = _clean_thai(s.get("text_th", ""))
     return data

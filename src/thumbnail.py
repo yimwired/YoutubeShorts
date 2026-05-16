@@ -11,14 +11,34 @@ PEXELS_KEY  = os.getenv("PEXELS_API_KEY")
 W, H = 1080, 1920
 
 
+def _extract_from_clip(clip_path: str, output_path: str, pct: float = 0.25) -> str | None:
+    """Extract a frame from a video clip at pct% of its duration."""
+    try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", clip_path],
+            capture_output=True, text=True)
+        dur = float(probe.stdout.strip())
+        t = max(0.5, dur * pct)
+        subprocess.run([
+            "ffmpeg", "-y", "-ss", str(t), "-i", clip_path, "-vframes", "1",
+            "-vf", f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}",
+            output_path], check=True, capture_output=True)
+        return output_path
+    except Exception:
+        return None
+
+
 def _fetch_pollinations(prompt: str, output_path: str) -> str | None:
     """Generate image via Pollinations.ai (free, no key required)."""
     import urllib.parse
-    p = f"{prompt}, vertical 9:16 format, high quality, vibrant colors"
+    p = (f"{prompt}, cinematic photography, dramatic lighting, "
+         f"photorealistic, sharp focus, 9:16 vertical format")
     url = (f"https://image.pollinations.ai/prompt/{urllib.parse.quote(p)}"
-           f"?width=1080&height=1920&model=flux&nologo=true&seed={hash(prompt) % 99999}")
+           f"?width=1080&height=1920&model=flux-pro&nologo=true"
+           f"&seed={hash(prompt) % 99999}")
     try:
-        r = requests.get(url, timeout=60)
+        r = requests.get(url, timeout=90)
         if r.status_code == 200 and len(r.content) > 1000:
             with open(output_path, "wb") as f:
                 f.write(r.content)
@@ -134,25 +154,40 @@ def _build_base(img: Image.Image, title: str) -> Image.Image:
 def create_thumbnail(video_path: str, title: str, output_path: str,
                      thai_ver: bool = False,
                      photo_keyword: str = None,
-                     ai_prompt: str = None) -> str:
+                     ai_prompt: str = None,
+                     clips: list = None) -> str:
 
-    # ── Background: Pollinations AI → Pexels → video frame ──────────
+    # ── Background priority: Pollinations AI → clip frame → Pexels → video frame → dark ──
     bg_path = output_path.replace(".jpg", "_bg.jpg")
     got_bg = False
 
+    # 1. Pollinations AI — prompt is topic-specific, most relevant for thumbnail
     if ai_prompt:
-        print(f"    [Thumbnail] Generating AI image...")
+        print(f"    [Thumbnail] Generating AI image (flux-pro)...")
         got_bg = bool(_fetch_pollinations(ai_prompt, bg_path))
         if got_bg:
             print(f"    [Thumbnail] AI image OK")
 
+    # 2. Clip frame — actual footage, fallback if Pollinations fails
+    if not got_bg and clips:
+        for clip in clips:
+            if clip and os.path.exists(clip):
+                got_bg = bool(_extract_from_clip(clip, bg_path))
+                if got_bg:
+                    print(f"    [Thumbnail] Using footage frame")
+                    break
+
+    # 3. Pexels photo
     if not got_bg and photo_keyword:
         got_bg = bool(_fetch_pexels_photo(photo_keyword, bg_path))
 
+    # 4. Video frame (post-render fallback)
     if not got_bg and video_path and os.path.exists(video_path):
         _extract_frame(video_path, bg_path)
-    elif not got_bg:
-        # No video yet and no online source — create plain dark background
+        got_bg = True
+
+    # 5. Dark background
+    if not got_bg:
         Image.new("RGB", (W, H), (15, 15, 15)).save(bg_path)
 
     img = Image.open(bg_path).convert("RGB").resize((W, H))

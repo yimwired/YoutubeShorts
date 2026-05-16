@@ -5,9 +5,77 @@ import os
 
 _BASE     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONT_TH   = os.path.join(_BASE, "Kanit-Bold.ttf")
-FONT_EN   = "C:/Windows/Fonts/impact.ttf" if os.name == "nt" else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_EN   = "C\\:/Windows/Fonts/impact.ttf" if os.name == "nt" else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 LOGO_PATH = os.path.join(_BASE, "logo.png")
 WORD_GAP  = 0.07
+
+# ── Thai ASS karaoke helpers ─────────────────────────────────────────────────
+
+_ASS_HEADER = """\
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Kanit,68,&H0000E0FF,&H00FFFFFF,&H00000000,&H90000000,-1,0,0,0,100,100,0,0,1,4,1,5,20,20,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+
+def _to_ass_time(s: float) -> str:
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{int(h)}:{int(m):02d}:{sec:05.2f}"
+
+
+def _make_thai_ass(words: list, ass_path: str):
+    """Build ASS karaoke file from word timestamp list."""
+    lines, current = [], []
+    for i, w in enumerate(words):
+        text = re.sub(r"[^฀-๿\s]", "", w["word"]).strip()
+        if not text:
+            continue
+        current.append(w)
+        is_last  = i == len(words) - 1
+        has_pause = (i + 1 < len(words) and
+                     words[i + 1]["start"] - w["end"] > 0.3)
+        if len(current) >= 4 or has_pause or is_last:
+            lines.append(current)
+            current = []
+
+    with open(ass_path, "w", encoding="utf-8") as f:
+        f.write(_ASS_HEADER)
+        for line_words in lines:
+            start = _to_ass_time(line_words[0]["start"])
+            end   = _to_ass_time(line_words[-1]["end"] + 0.05)
+            karaoke = ""
+            for w in line_words:
+                dur_cs = max(1, int((w["end"] - w["start"]) * 100))
+                text   = re.sub(r"[^฀-๿\s]", "", w["word"]).strip()
+                karaoke += f"{{\\kf{dur_cs}}}{text}"
+            f.write(f'Dialogue: 0,{start},{end},Default,,0,0,0,,{{\\pos(540,1120)}}{karaoke}\n')
+
+
+def _burn_ass(src: str, ass_path: str, dst: str):
+    """Pass 2: burn ASS subtitle onto video. Run from ASS dir to avoid Windows path issues."""
+    ass_dir  = os.path.dirname(os.path.abspath(ass_path))
+    ass_name = os.path.basename(ass_path)
+    r = subprocess.run(
+        ["ffmpeg", "-y", "-i", os.path.abspath(src),
+         "-vf", f"ass={ass_name}",
+         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+         "-c:a", "copy", os.path.abspath(dst)],
+        capture_output=True, text=True,
+        cwd=ass_dir,
+    )
+    if r.returncode != 0:
+        print(r.stderr[-2000:])
+        raise RuntimeError("ASS burn failed")
 
 # Color scheme: white normal, red for emphasis (every ~5th word or last word of sentence)
 def _word_color(word: str, idx: int, total: int) -> str:
@@ -137,7 +205,8 @@ def prepend_title_card(video_path: str, thumb_path: str, title: str,
 def create_short(video_path: str, audio_path: str, title: str, script: str,
                  output_path: str, words: list[dict] = None,
                  clips: list[str] = None, lang: str = "en",
-                 music_path: str = None) -> str:
+                 music_path: str = None,
+                 cut_times: list[float] = None) -> str:
 
     audio_dur = min(_clip_duration(audio_path) + 0.5, 58.0)
 
@@ -168,7 +237,10 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
     n_clips = len(all_clips)
 
     # ── Find cut points ─────────────────────────────────────────
-    cut_points = _find_cut_points(words or [], n_clips, audio_dur)
+    if cut_times:
+        cut_points = [t for t in sorted(cut_times) if 0 < t < audio_dur]
+    else:
+        cut_points = _find_cut_points(words or [], n_clips, audio_dur)
     boundaries = [0.0] + cut_points + [audio_dur]
     segments = [(boundaries[i], boundaries[i + 1]) for i in range(len(boundaries) - 1)]
 
@@ -183,22 +255,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
     text_parts = []
 
     if lang == "th":
-        # 2-3 word chunks, alternating white/yellow, same position as EN
-        TH_COLORS = ["white", "#FFE000"]
-        for i, w in enumerate(words):
-            t_start = w["start"]
-            t_end   = max(w["end"], t_start + 0.15)
-            text    = re.sub(r"[^฀-๿\s]", "", w["word"]).strip()
-            if not text:
-                continue
-            color = TH_COLORS[i % 2]
-            text_parts.append(
-                f"drawtext=fontfile='{FONT_TH}':text='{_escape(text)}':"
-                f"fontsize=68:fontcolor={color}:"
-                f"box=1:boxcolor=black@0.85:boxborderw=14:"
-                f"x=(w-text_w)/2:y=(h-text_h)/2+160:"
-                f"enable='between(t\\,{t_start}\\,{t_end})'"
-            )
+        pass  # Thai subtitle handled via ASS in pass 2 (see below)
     else:
         # EN: word-by-word karaoke style
         for i, w in enumerate(words):
@@ -220,7 +277,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
                 f"enable='between(t\\,{t_start}\\,{t_end})'"
             )
 
-    if not text_parts:
+    if not text_parts and lang != "th":
         caption = _escape(script[:80])
         text_parts.append(
             f"drawtext=fontfile='{FONT_EN}':text='{caption}':"
@@ -283,4 +340,21 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
     if result.returncode != 0:
         print(result.stderr[-3000:])
         raise RuntimeError("FFmpeg failed")
+
+    # ── Pass 2: burn Thai ASS karaoke subtitle ───────────────────
+    if lang == "th" and words:
+        ass_file = tempfile.NamedTemporaryFile(suffix=".ass", delete=False,
+                                               mode="w", encoding="utf-8")
+        ass_file.close()
+        pass1 = output_path.replace(".mp4", "_pass1.mp4")
+        os.rename(output_path, pass1)
+        try:
+            _make_thai_ass(words, ass_file.name)
+            _burn_ass(pass1, ass_file.name, output_path)
+        finally:
+            if os.path.exists(pass1):
+                os.remove(pass1)
+            if os.path.exists(ass_file.name):
+                os.unlink(ass_file.name)
+
     return output_path

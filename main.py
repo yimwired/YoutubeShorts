@@ -160,19 +160,30 @@ def _sync_th_subs(script_th: str, audio_path: str) -> list[dict]:
     return result if result else _make_th_subs(script_th, _clip_duration(audio_path))
 
 
+def _get_segment_cut_times(audio_path: str, lang: str) -> list[float]:
+    """Whisper segment start times → clip cut points."""
+    try:
+        from src.captions import _get_model
+        model = _get_model("base")
+        segs, _ = model.transcribe(audio_path, language=lang)
+        return [seg.start for seg in list(segs)[1:]]
+    except Exception:
+        return []
+
+
 def make_video(clips: list[str], audio_path: str, title: str,
                words: list[dict], timestamp: int, lang: str,
-               music: str = None, thumb_path: str = None) -> str:
-    """Build one video using pre-computed (and scaled) EN word timestamps."""
+               music: str = None, thumb_path: str = None,
+               cut_times: list[float] = None) -> str:
     print(f"  [{lang.upper()}] Editing...")
     final_path = os.path.join(OUTPUT_DIR, f"short_{timestamp}_{lang}.mp4")
     create_short(clips[0], audio_path, title, "", final_path,
-                 words=words, clips=clips, lang=lang, music_path=music)
+                 words=words, clips=clips, lang=lang, music_path=music,
+                 cut_times=cut_times)
     if thumb_path and os.path.exists(thumb_path):
         print(f"  [{lang.upper()}] Adding title card...")
         prepend_title_card(final_path, thumb_path, title, lang)
     print(f"  [{lang.upper()}] Saved: {final_path}")
-
     return final_path
 
 
@@ -197,13 +208,18 @@ def run_pipeline():
     print(f"  EN: {title_en}")
     print(f"  TH: {title_th}")
 
-    # Step 2: Fetch footage (shared)
+    # Step 2: Fetch footage — 1 clip per sentence if available
     print("[2] Fetching stock footage...")
-    clips = fetch_multiple_clips(keywords, OUTPUT_DIR)
+    sentences = data.get("sentences", [])
+    kw_list = (
+        [{"specific": s.get("keyword", ""), "fallback": s.get("fallback", "")} for s in sentences]
+        if sentences else keywords
+    )
+    clips = fetch_multiple_clips(kw_list, OUTPUT_DIR)
     if not clips:
         print("  ERROR: No footage. Aborting.")
         return
-    print(f"  Got {len(clips)} clip(s)")
+    print(f"  Got {len(clips)} clip(s) for {len(kw_list)} sentence(s)")
 
     # Step 3: Generate voiceovers
     print("[3] Generating voiceovers...")
@@ -213,12 +229,15 @@ def run_pipeline():
     _, th_boundaries = generate_voiceover(script_th, audio_th, lang="th")
     print(f"  TH sentence boundaries: {len(th_boundaries)}")
 
-    # Step 4: Word timestamps via Whisper (tiny=EN, base=TH)
+    # Step 4: Word timestamps + segment cut times
     print("[4] Getting word timestamps...")
     en_words = get_word_timestamps(audio_en, lang="en")
     print(f"  EN words: {len(en_words)}")
-    th_words = _make_th_subs(script_th, _clip_duration(audio_th))
+    th_words = _sync_th_subs(script_th, audio_th)
     print(f"  TH subs: {len(th_words)} chunks")
+    en_cut_times = _get_segment_cut_times(audio_en, "en")
+    th_cut_times = _get_segment_cut_times(audio_th, "th")
+    print(f"  EN cuts: {len(en_cut_times)} | TH cuts: {len(th_cut_times)}")
 
     # Step 5: Thumbnails first (needed for title card)
     print("[5] Creating thumbnails...")
@@ -231,10 +250,10 @@ def run_pipeline():
     _placeholder = os.path.join(OUTPUT_DIR, f"short_{timestamp}_en.mp4")
     create_thumbnail(_placeholder, title_en, thumb_en,
                      thai_ver=False, photo_keyword=thumb_keyword,
-                     ai_prompt=ai_prompt)
+                     ai_prompt=ai_prompt, clips=clips)
     create_thumbnail(_placeholder, title_en, thumb_th,
                      thai_ver=True, photo_keyword=thumb_keyword,
-                     ai_prompt=ai_prompt)
+                     ai_prompt=ai_prompt, clips=clips)
     print(f"  EN: {thumb_en}")
     print(f"  TH: {thumb_th}")
 
@@ -244,12 +263,12 @@ def run_pipeline():
     music = get_track(mood)
     print(f"  Music mood: {mood} → {music or '(none — set PIXABAY_API_KEY or add files to music/)'}")
     final_en = make_video(clips, audio_en, title_en, en_words, timestamp, "en", music,
-                          thumb_path=thumb_en)
+                          thumb_path=thumb_en, cut_times=en_cut_times)
 
     # Step 6.5: Build TH video
     print("[6.5] Creating TH video (Thai voice + EN subs)...")
-    final_th = make_video(clips, audio_th, title_en, th_words, timestamp, "th", music,
-                          thumb_path=thumb_th)
+    final_th = make_video(clips, audio_th, title_th, th_words, timestamp, "th", music,
+                          thumb_path=thumb_th, cut_times=th_cut_times)
 
     # Step 7: Upload
     print("[7] Uploading...")
