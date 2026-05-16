@@ -11,6 +11,8 @@ Pillow
 apscheduler
 edge-tts
 faster-whisper
+openai-whisper
+gtts
 pythainlp
 numpy
 tqdm

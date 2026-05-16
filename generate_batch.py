@@ -31,7 +31,8 @@ from main import _make_th_subs, make_video
 OUTPUT_DIR = "output"
 QUEUE_DIR  = "queue"
 BKK        = ZoneInfo("Asia/Bangkok")
-POST_HOURS = [8, 12, 19]
+POST_HOURS  = [8, 12, 19]
+SLOT_STYLES = {8: "trending", 12: "chaos", 19: "narrative"}
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(QUEUE_DIR, exist_ok=True)
@@ -72,12 +73,14 @@ def _future_slots(start_offset: int, n: int) -> list[str]:
 
 def generate_one_pair(index: int, publish_at: str) -> None:
     timestamp = int(time.time()) + index * 10
-    print(f"\n[Batch {index+1}] ts={timestamp}  publish→{publish_at[:16]}")
+    slot_hour = datetime.fromisoformat(publish_at).hour
+    style     = SLOT_STYLES.get(slot_hour, "trending")
+    print(f"\n[Batch {index+1}] ts={timestamp}  publish→{publish_at[:16]}  style={style}")
 
-    topic = get_trending_topic()
-    print(f"  Topic: {topic or '(none)'}")
+    topic = get_trending_topic() if style == "trending" else None
+    print(f"  Topic: {topic or f'(auto — {style})'}")
 
-    data      = generate_fact_script(topic=topic, used_titles=load_history())
+    data      = generate_fact_script(topic=topic, used_titles=load_history(), style=style)
     title_en  = data["title_en"]
     title_th  = data["title_th"]
     script_en = data["script_en"]
@@ -86,18 +89,24 @@ def generate_one_pair(index: int, publish_at: str) -> None:
     print(f"  EN: {title_en}")
     print(f"  TH: {title_th}")
 
-    clips = fetch_multiple_clips(keywords, OUTPUT_DIR)
+    # trending: 5 clips (variety) — not per-sentence
+    kw_for_clips = keywords[:5] if style == "trending" else keywords
+    clips = fetch_multiple_clips(kw_for_clips, OUTPUT_DIR)
     if not clips:
         print("  ERROR: No footage — skipping")
         return
 
     audio_en = os.path.join(OUTPUT_DIR, f"audio_{timestamp}_en.mp3")
     audio_th = os.path.join(OUTPUT_DIR, f"audio_{timestamp}_th.mp3")
-    generate_voiceover(script_en, audio_en, lang="en")
-    _, th_boundaries = generate_voiceover(script_th, audio_th, lang="th")
+    generate_voiceover(script_en, audio_en, lang="en", style=style)
+    _, th_boundaries = generate_voiceover(script_th, audio_th, lang="th", style=style)
 
+    from main import _sync_th_subs
     en_words = get_word_timestamps(audio_en, lang="en")
-    th_words = _make_th_subs(script_th, _clip_duration(audio_th))
+    sentences_th = [s.get("text_th", "") for s in data.get("sentences", [])]
+    th_words = _sync_th_subs(script_th, audio_th, sentences_th=sentences_th or None,
+                             style=style,
+                             tts_boundaries=th_boundaries if style == "trending" else None)
 
     mood  = data.get("music_mood", "dramatic")
     music = get_track(mood)
@@ -112,9 +121,9 @@ def generate_one_pair(index: int, publish_at: str) -> None:
                      thai_ver=True, photo_keyword=thumb_keyword, ai_prompt=ai_prompt)
 
     final_en = make_video(clips, audio_en, title_en, en_words, timestamp, "en", music,
-                          thumb_path=thumb_en)
+                          thumb_path=thumb_en, content_style=style)
     final_th = make_video(clips, audio_th, title_en, th_words, timestamp, "th", music,
-                          thumb_path=thumb_th)
+                          thumb_path=thumb_th, content_style=style)
 
     desc_en     = data.get("description", script_en)
     desc_th     = data.get("description_th", script_th)

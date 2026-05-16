@@ -107,18 +107,166 @@ def _make_th_subs(script_th: str, total_dur: float,
     return result
 
 
-def _sync_th_subs(script_th: str, audio_path: str) -> list[dict]:
+def _get_sentence_timings(audio_path: str, n: int) -> list[tuple]:
     """
-    Whisper base → actual segment timings from TH audio.
-    Split each segment's text into small chunks using PyThaiNLP.
-    Direct mapping = proper sync.
+    Find n timing windows by detecting the n-1 largest pauses in the audio.
+    Uses Whisper word_timestamps for sub-segment pause resolution.
+    Works well for Neural TTS (PremwadeeNeural) which has clear inter-sentence pauses.
+    """
+    try:
+        from src.captions import _get_model
+        model = _get_model("base")
+        segs, _ = model.transcribe(str(audio_path), language="th",
+                                   word_timestamps=True)
+        segments = list(segs)
+        if not segments:
+            raise Exception("empty")
+
+        total = segments[-1].end
+
+        # Collect word-level timing events
+        events: list[tuple[float, float]] = []
+        for seg in segments:
+            for w in seg.words:
+                if w.end > w.start:
+                    events.append((w.start, w.end))
+        events.sort()
+
+        if len(events) < 2:
+            raise Exception("too few events")
+
+        # Measure every gap between consecutive word events
+        gaps: list[tuple[float, float]] = []  # (gap_size, midpoint)
+        for i in range(1, len(events)):
+            gap = round(events[i][0] - events[i - 1][1], 4)
+            if gap >= 0.1:
+                mid = round((events[i - 1][1] + events[i][0]) / 2, 3)
+                gaps.append((gap, mid))
+
+        # Pick the n-1 largest gaps as sentence boundaries
+        gaps.sort(reverse=True)
+        split_points = sorted(mid for _, mid in gaps[:n - 1])
+
+        boundaries = [0.0] + split_points + [total]
+        return [(boundaries[i], boundaries[i + 1]) for i in range(n)]
+
+    except Exception:
+        dur = _clip_duration(audio_path)
+        step = dur / n
+        return [(i * step, (i + 1) * step) for i in range(n)]
+
+
+def _subs_from_sentences(sentences_th: list, audio_path: str) -> list[dict]:
+    """
+    Subtitle from exact script text + Whisper-based sentence timing.
+    Text = correct (no Whisper transcription error)
+    Timing = from Whisper segment detection (includes natural pauses)
     """
     import re
-    from src.captions import _get_model
-
     try:
+        from pythainlp.tokenize import word_tokenize
+        tokenize = lambda t: [w.strip() for w in
+                               word_tokenize(t, engine="newmm", keep_whitespace=False) if w.strip()]
+    except Exception:
+        tokenize = lambda t: t.split()
+
+    clean = [re.sub(r"[^฀-๿\s]", "", s).strip() for s in sentences_th]
+    clean = [s for s in clean if s]
+    if not clean:
+        return []
+
+    timings = _get_sentence_timings(audio_path, len(clean))
+    result = []
+
+    for sentence, (t_start, t_end) in zip(clean, timings):
+        words = tokenize(sentence)
+        if not words:
+            continue
+        sent_dur = max(t_end - t_start, 0.1)
+        word_dur = sent_dur / len(words)
+        for i, word in enumerate(words):
+            result.append({
+                "word":  word,
+                "start": round(t_start + i * word_dur, 3),
+                "end":   round(t_start + (i + 1) * word_dur - 0.04, 3),
+            })
+
+    return result
+
+
+def _subs_from_tts_boundaries(sentences_th: list,
+                              boundaries: list[dict]) -> list[dict]:
+    """Exact script text timed by TTS SentenceBoundary events."""
+    import re
+    try:
+        from pythainlp.tokenize import word_tokenize
+        tokenize = lambda t: [w.strip() for w in
+                               word_tokenize(t, engine="newmm", keep_whitespace=False)
+                               if w.strip()]
+    except Exception:
+        tokenize = lambda t: t.split()
+
+    clean = [re.sub(r"[^฀-๿\s]", "", s).strip() for s in sentences_th]
+    clean = [s for s in clean if s]
+    if not clean or not boundaries:
+        return []
+
+    result = []
+    n = min(len(clean), len(boundaries))
+    for i in range(n):
+        words    = tokenize(clean[i])
+        if not words:
+            continue
+        b        = boundaries[i]
+        sent_dur = max(b["end"] - b["start"], 0.1)
+        word_dur = sent_dur / len(words)
+        for j, word in enumerate(words):
+            result.append({
+                "word":  word,
+                "start": round(b["start"] + j * word_dur, 3),
+                "end":   round(b["start"] + (j + 1) * word_dur - 0.04, 3),
+            })
+    return result
+
+
+def _group_words(words: list[dict], chunk_size: int = 3) -> list[dict]:
+    """Merge consecutive word entries into chunks so each subtitle stays longer."""
+    result = []
+    for i in range(0, len(words), chunk_size):
+        chunk = words[i:i + chunk_size]
+        result.append({
+            "word":  "".join(w["word"] for w in chunk),
+            "start": chunk[0]["start"],
+            "end":   chunk[-1]["end"],
+        })
+    return result
+
+
+def _sync_th_subs(script_th: str, audio_path: str,
+                  sentences_th: list = None,
+                  style: str = "trending",
+                  tts_boundaries: list = None) -> list[dict]:
+    if style == "narrative" and sentences_th:
+        return _subs_from_sentences(sentences_th, audio_path)
+
+    # trending: prefer TTS boundaries (if coverage ≥70%), else Whisper+exact text
+    if style == "trending" and sentences_th:
+        if tts_boundaries and len(tts_boundaries) >= len(sentences_th) * 0.7:
+            raw = _subs_from_tts_boundaries(sentences_th, tts_boundaries)
+        else:
+            raw = _subs_from_sentences(sentences_th, audio_path)
+        if raw:
+            return _group_words(raw, chunk_size=3)
+
+
+
+    # chaos: original approach — Whisper base (no word_timestamps)
+    # → PyThaiNLP tokenize per segment → 2-word chunks with proportional timing
+    import re
+    try:
+        from src.captions import _get_model
         model = _get_model("base")
-        segs, _ = model.transcribe(audio_path, language="th")
+        segs, _ = model.transcribe(str(audio_path), language="th")
         segments = list(segs)
     except Exception:
         return _make_th_subs(script_th, _clip_duration(audio_path))
@@ -126,28 +274,21 @@ def _sync_th_subs(script_th: str, audio_path: str) -> list[dict]:
     if not segments:
         return _make_th_subs(script_th, _clip_duration(audio_path))
 
-    # Use Whisper-detected Thai text from actual audio (most accurate timing)
     result = []
     for seg in segments:
         text = re.sub(r"[^฀-๿\s]", "", seg.text).strip()
         if not text:
             continue
-
-        # Split segment text into 2-word chunks
         try:
             from pythainlp.tokenize import word_tokenize
             words = word_tokenize(text, engine="newmm", keep_whitespace=False)
             words = [w for w in words if w.strip()]
         except Exception:
             words = [text]
-
-        # Group into chunks of 2
         chunks = ["".join(words[i:i+2]) for i in range(0, len(words), 2)]
         chunks = [c for c in chunks if c]
-
         if not chunks:
             continue
-
         seg_dur  = max(seg.end - seg.start, 0.1)
         word_dur = seg_dur / len(chunks)
         for i, chunk in enumerate(chunks):
@@ -156,7 +297,6 @@ def _sync_th_subs(script_th: str, audio_path: str) -> list[dict]:
                 "start": round(seg.start + i * word_dur, 3),
                 "end":   round(seg.start + (i+1) * word_dur - 0.06, 3),
             })
-
     return result if result else _make_th_subs(script_th, _clip_duration(audio_path))
 
 
@@ -174,12 +314,13 @@ def _get_segment_cut_times(audio_path: str, lang: str) -> list[float]:
 def make_video(clips: list[str], audio_path: str, title: str,
                words: list[dict], timestamp: int, lang: str,
                music: str = None, thumb_path: str = None,
-               cut_times: list[float] = None) -> str:
+               cut_times: list[float] = None,
+               content_style: str = "trending") -> str:
     print(f"  [{lang.upper()}] Editing...")
     final_path = os.path.join(OUTPUT_DIR, f"short_{timestamp}_{lang}.mp4")
     create_short(clips[0], audio_path, title, "", final_path,
                  words=words, clips=clips, lang=lang, music_path=music,
-                 cut_times=cut_times)
+                 cut_times=cut_times, content_style=content_style)
     if thumb_path and os.path.exists(thumb_path):
         print(f"  [{lang.upper()}] Adding title card...")
         prepend_title_card(final_path, thumb_path, title, lang)
@@ -233,7 +374,8 @@ def run_pipeline():
     print("[4] Getting word timestamps...")
     en_words = get_word_timestamps(audio_en, lang="en")
     print(f"  EN words: {len(en_words)}")
-    th_words = _sync_th_subs(script_th, audio_th)
+    sentences_th = [s.get("text_th", "") for s in data.get("sentences", [])]
+    th_words = _sync_th_subs(script_th, audio_th, sentences_th=sentences_th or None, style="narrative")
     print(f"  TH subs: {len(th_words)} chunks")
     en_cut_times = _get_segment_cut_times(audio_en, "en")
     th_cut_times = _get_segment_cut_times(audio_th, "th")
@@ -263,12 +405,12 @@ def run_pipeline():
     music = get_track(mood)
     print(f"  Music mood: {mood} → {music or '(none — set PIXABAY_API_KEY or add files to music/)'}")
     final_en = make_video(clips, audio_en, title_en, en_words, timestamp, "en", music,
-                          thumb_path=thumb_en, cut_times=en_cut_times)
+                          thumb_path=thumb_en, cut_times=en_cut_times, content_style="narrative")
 
     # Step 6.5: Build TH video
     print("[6.5] Creating TH video (Thai voice + EN subs)...")
     final_th = make_video(clips, audio_th, title_th, th_words, timestamp, "th", music,
-                          thumb_path=thumb_th, cut_times=th_cut_times)
+                          thumb_path=thumb_th, cut_times=th_cut_times, content_style="narrative")
 
     # Step 7: Upload
     print("[7] Uploading...")
