@@ -130,6 +130,11 @@ def generate_one_pair(index: int, publish_at: str) -> None:
     hashtags_en = data.get("hashtags", ["shorts", "facts", "didyouknow"])
     hashtags_th = data.get("hashtags_th", ["shorts", "เรื่องน่ารู้", "ความรู้"])
 
+    if isinstance(hashtags_en, str):
+        hashtags_en = [h.strip().lstrip("#") for h in hashtags_en.replace(",", " ").split() if h.strip()]
+    if isinstance(hashtags_th, str):
+        hashtags_th = [h.strip().lstrip("#") for h in hashtags_th.replace(",", " ").split() if h.strip()]
+
     if "shorts" not in [h.lower() for h in hashtags_en]:
         hashtags_en = ["shorts"] + hashtags_en
     if "shorts" not in [h.lower() for h in hashtags_th]:

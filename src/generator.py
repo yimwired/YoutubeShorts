@@ -195,7 +195,13 @@ def generate_fact_script(topic: str = None, used_titles: list = None,
         if raw.startswith("json"):
             raw = raw[4:]
 
-    data = json.loads(raw.strip())
+    # strict=False tolerates raw control chars (newlines, tabs) inside JSON
+    # string values — Groq sometimes emits them in Thai content.
+    try:
+        data = json.loads(raw.strip(), strict=False)
+    except json.JSONDecodeError:
+        cleaned = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw.strip())
+        data = json.loads(cleaned, strict=False)
 
     # Build script_en / script_th / keywords from sentences (backward compat)
     sentences = data.get("sentences", [])
