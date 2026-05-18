@@ -291,25 +291,8 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
     # ── Text overlays ────────────────────────────────────────────
     text_parts = []
 
-    if lang == "th" and content_style == "trending":
-        # Original drawtext approach — alternating white/yellow per word
-        TH_COLORS = ["white", "#FFE000"]
-        for i, w in enumerate(words or []):
-            t_start = w["start"]
-            t_end   = max(w["end"], t_start + 0.15)
-            text    = re.sub(r"[^฀-๿\s]", "", w["word"]).strip()
-            if not text:
-                continue
-            color = TH_COLORS[i % 2]
-            text_parts.append(
-                f"drawtext=fontfile='{FONT_TH}':text='{_escape(text)}':"
-                f"fontsize=68:fontcolor={color}:"
-                f"box=1:boxcolor=black@0.85:boxborderw=14:"
-                f"x=(w-text_w)/2:y=(h-text_h)/2+160:"
-                f"enable='between(t\\,{t_start}\\,{t_end})'"
-            )
-    elif lang == "th":
-        pass  # chaos/narrative: ASS karaoke in pass 2 (see below)
+    if lang == "th":
+        pass  # all TH styles: ASS karaoke in pass 2 (see below)
     else:
         # EN: word-by-word karaoke style
         for i, w in enumerate(words):
@@ -396,8 +379,8 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
         print(result.stderr[-3000:])
         raise RuntimeError("FFmpeg failed")
 
-    # ── Pass 2: burn Thai ASS karaoke subtitle (chaos/narrative only) ───
-    if lang == "th" and words and content_style != "trending":
+    # ── Pass 2: burn Thai ASS karaoke subtitle (all TH styles) ───
+    if lang == "th" and words:
         ass_file = tempfile.NamedTemporaryFile(suffix=".ass", delete=False,
                                                mode="w", encoding="utf-8")
         ass_file.close()
