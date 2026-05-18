@@ -113,15 +113,6 @@ def _burn_ass(src: str, ass_path: str, dst: str):
         if os.path.exists(target_ass):
             os.remove(target_ass)
 
-# Color scheme: white normal, red for emphasis (every ~5th word or last word of sentence)
-def _word_color(word: str, idx: int, total: int) -> str:
-    if idx == total - 1:          # last word = red
-        return "red"
-    if len(word) >= 6 and idx % 5 == 0:   # long words at intervals = red
-        return "red"
-    return "white"
-
-
 def _escape(text: str) -> str:
     return (
         text.replace("\\", "\\\\")
@@ -294,21 +285,53 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
     if lang == "th":
         pass  # all TH styles: ASS karaoke in pass 2 (see below)
     else:
-        # EN: word-by-word karaoke style
-        for i, w in enumerate(words):
-            t_start = w["start"]
-            t_end = w["end"] if i + 1 >= len(words) else min(
-                w["end"], words[i + 1]["start"] - WORD_GAP)
-            t_end = max(t_end, t_start + 0.08)
+        # EN: char-bounded word chunks per drawtext frame.
+        # Distinct from TH (ASS karaoke sweep). Keeps Impact + drawtext identity.
+        EN_STYLES = {
+            "trending":  {"size": 84, "accent": "#FF2A2A"},
+            "chaos":     {"size": 92, "accent": "#FFE000"},
+            "narrative": {"size": 74, "accent": "#FF8C00"},
+        }
+        st         = EN_STYLES.get(content_style, EN_STYLES["trending"])
+        MAX_CHARS  = 17       # Impact at these sizes fits ~17 chars wide in 1080
+        MAX_WORDS  = 3
 
+        valid = []
+        for w in (words or []):
             clean = re.sub(r"[^\w\s]", "", w["word"]).strip()
-            if not clean:
-                continue
-            text  = _escape(clean)
-            color = _word_color(clean, i, len(words))
+            if clean:
+                valid.append({"text": clean, "start": w["start"], "end": w["end"]})
+
+        # Greedy pack: respect both MAX_CHARS and MAX_WORDS
+        chunks  = []
+        buf     = []
+        buf_len = 0
+        for w in valid:
+            wl = len(w["text"])
+            add_len = buf_len + (1 if buf else 0) + wl
+            if buf and (add_len > MAX_CHARS or len(buf) >= MAX_WORDS):
+                chunks.append(buf)
+                buf, buf_len = [w], wl
+            else:
+                buf.append(w)
+                buf_len = add_len
+        if buf:
+            chunks.append(buf)
+
+        n_chunks = len(chunks)
+        for ci, chunk in enumerate(chunks):
+            t_start = chunk[0]["start"]
+            t_end   = chunks[ci + 1][0]["start"] - WORD_GAP if ci + 1 < n_chunks else chunk[-1]["end"]
+            t_end   = max(t_end, t_start + 0.3)
+
+            chunk_text = " ".join(w["text"] for w in chunk)
+            text = _escape(chunk_text)
+            # Accent every 3rd chunk + final chunk for rhythm without randomness
+            is_accent = (ci % 3 == 2) or (ci == n_chunks - 1)
+            color = st["accent"] if is_accent else "white"
             text_parts.append(
                 f"drawtext=fontfile='{FONT_EN}':text='{text}':"
-                f"fontsize=95:fontcolor={color}:"
+                f"fontsize={st['size']}:fontcolor={color}:"
                 f"box=1:boxcolor=black@0.85:boxborderw=12:"
                 f"x=(w-text_w)/2:y=(h-text_h)/2+160:"
                 f"enable='between(t\\,{t_start}\\,{t_end})'"
