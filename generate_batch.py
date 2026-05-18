@@ -24,7 +24,7 @@ from src.editor import create_short, _clip_duration
 from src.trends import get_trending_topic
 from src.music import get_track
 from src.notion_logger import log_scheduled, mark_uploaded
-from src.uploader import upload_youtube
+from src.uploader import upload_youtube, upload_tiktok
 from src.topic_history import load_history, save_topic
 from main import _make_th_subs, make_video
 
@@ -186,15 +186,20 @@ def generate_one_pair(index: int, publish_at: str) -> None:
             thumbnail_path=thumb_path,
             lang=lang, publish_at=publish_at,
         )
+        # TikTok upload (no native scheduling — stub returns None until configured)
+        tt_title = title if lang == "en" else f"{title_en} Thai Ver"
+        tt_url   = upload_tiktok(video_path, tt_title)
+
         if result:
             yt_url, yt_id = result
             job["status"]           = "uploaded"
             job["youtube_url"]      = yt_url
             job["youtube_video_id"] = yt_id
+            job["tiktok_url"]       = tt_url
             with open(job_path, "w", encoding="utf-8") as f:
                 json.dump(job, f, ensure_ascii=False, indent=2)
             if notion_page_id:
-                mark_uploaded(notion_page_id, youtube_url=yt_url)
+                mark_uploaded(notion_page_id, youtube_url=yt_url, tiktok_url=tt_url)
         else:
             print(f"  [Upload] Failed — will retry via scheduler")
 

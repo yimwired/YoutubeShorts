@@ -85,12 +85,13 @@ def _upload_job(job: dict, publish_at: str) -> None:
         publish_at=publish_at,
     )
     yt_url, yt_id = result if result else (None, None)
-    upload_tiktok(video_path, title)
+    tt_url        = upload_tiktok(video_path, title)
 
     # Update job: mark as uploaded, store video ID
     job["status"]           = "uploaded"
     job["youtube_video_id"] = yt_id
     job["youtube_url"]      = yt_url
+    job["tiktok_url"]       = tt_url
     _save_job(job)
 
     print(f"  [Queue] Scheduled: [{lang.upper()}] {title[:40]} → live at {publish_at[:16]}")
@@ -114,12 +115,13 @@ def catchup() -> None:
         vid_id    = job.get("youtube_video_id")
         notion_id = job.get("notion_page_id")
         yt_url    = job.get("youtube_url")
+        tt_url    = job.get("tiktok_url")
         title     = job.get("title", "")
 
         if vid_id and check_video_public(vid_id):
             print(f"  [Catchup] Now live: {title[:50]}")
             if notion_id:
-                mark_uploaded(notion_id, youtube_url=yt_url)
+                mark_uploaded(notion_id, youtube_url=yt_url, tiktok_url=tt_url)
             os.remove(job["_file"])
         else:
             print(f"  [Catchup] Not public yet: {title[:50]} (vid={vid_id})")
@@ -147,10 +149,10 @@ def catchup() -> None:
             publish_at=None,
         )
         yt_url, yt_id = result if result else (None, None)
-        upload_tiktok(video_path, title)
+        tt_url        = upload_tiktok(video_path, title)
 
         if notion_id:
-            mark_uploaded(notion_id, youtube_url=yt_url)
+            mark_uploaded(notion_id, youtube_url=yt_url, tiktok_url=tt_url)
 
         os.remove(job["_file"])
         print(f"  [Catchup] Uploaded: {title[:50]}")
