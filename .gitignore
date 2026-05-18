@@ -1,6 +1,7 @@
 # Secrets
 .env
 token_youtube.json
+token_tiktok.json
 client_secrets.json
 
 # Video output (large files)
