@@ -186,9 +186,9 @@ def generate_one_pair(index: int, publish_at: str) -> None:
             thumbnail_path=thumb_path,
             lang=lang, publish_at=publish_at,
         )
-        # TikTok upload (no native scheduling — stub returns None until configured)
+        # TikTok upload (uses native scheduling if publish_at is 15min-10day out)
         tt_title = title if lang == "en" else f"{title_en} Thai Ver"
-        tt_url   = upload_tiktok(video_path, tt_title)
+        tt_url   = upload_tiktok(video_path, tt_title, publish_at=publish_at)
 
         if result:
             yt_url, yt_id = result

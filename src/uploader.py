@@ -103,6 +103,52 @@ def check_video_public(video_id: str) -> bool:
         return False
 
 
-def upload_tiktok(video_path: str, title: str) -> str | None:
-    print(f"  [TikTok] Not configured — file: {video_path}")
-    return None
+def upload_tiktok(video_path: str, title: str,
+                  publish_at: str = None) -> str | None:
+    """Upload video to TikTok via tiktok-uploader (cookie-based).
+    Requires TIKTOK_SESSIONID in env. Returns profile URL on success.
+    If publish_at is provided (ISO string), TikTok native scheduling is used.
+    TikTok constraint: schedule must be between 15min and 10 days from now."""
+    sessionid = os.getenv("TIKTOK_SESSIONID")
+    if not sessionid:
+        print(f"  [TikTok] No TIKTOK_SESSIONID set — skipping: {video_path}")
+        return None
+
+    try:
+        from tiktok_uploader.upload import upload_video
+    except ImportError:
+        print(f"  [TikTok] tiktok-uploader not installed — pip install tiktok-uploader")
+        return None
+
+    schedule = None
+    if publish_at:
+        from datetime import datetime, timezone, timedelta
+        try:
+            t = datetime.fromisoformat(publish_at)
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            t_utc = t.astimezone(timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            # Only schedule if within TikTok's 15min..10day window
+            if timedelta(minutes=15) <= (t_utc - now_utc) <= timedelta(days=10):
+                schedule = t_utc
+        except Exception:
+            pass
+
+    print(f"  [TikTok] Uploading: {title[:50]}...")
+    try:
+        failed = upload_video(
+            filename=video_path,
+            description=title,
+            sessionid=sessionid,
+            schedule=schedule,
+            headless=True,
+        )
+        if failed:
+            print(f"  [TikTok] Failed: {failed}")
+            return None
+        print(f"  [TikTok] Done (scheduled={schedule is not None})")
+        return "https://www.tiktok.com/@me"
+    except Exception as e:
+        print(f"  [TikTok] Error: {e}")
+        return None
