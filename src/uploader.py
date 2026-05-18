@@ -135,14 +135,22 @@ def upload_tiktok(video_path: str, title: str,
         except Exception:
             pass
 
+    # Build cookies_list manually — lib's sessionid path drops the domain
+    cookies_list = [{
+        "name":   "sessionid",
+        "value":  sessionid,
+        "domain": ".tiktok.com",
+        "path":   "/",
+    }]
+
     print(f"  [TikTok] Uploading: {title[:50]}...")
     try:
         failed = upload_video(
             filename=video_path,
             description=title,
-            sessionid=sessionid,
+            cookies_list=cookies_list,
             schedule=schedule,
-            headless=True,
+            headless=False,
         )
         if failed:
             print(f"  [TikTok] Failed: {failed}")
