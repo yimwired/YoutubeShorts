@@ -1,8 +1,11 @@
 name: Daily Video Generation
 
 on:
-  schedule:
-    - cron: '0 23 * * *'   # 06:00 Bangkok (UTC+7) — 2-hour buffer before 08:00 first slot
+  # Cron disabled — local Task Scheduler is now the primary runner because
+  # TikTok cookie-based upload (Selenium) requires a GUI which GH runners
+  # don't have. Re-enable cron when the official TikTok API is approved.
+  # schedule:
+  #   - cron: '0 23 * * *'   # 06:00 Bangkok (UTC+7)
   workflow_dispatch:        # manual trigger from GitHub UI
 
 jobs:
