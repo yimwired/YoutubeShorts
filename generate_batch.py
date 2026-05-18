@@ -98,15 +98,16 @@ def generate_one_pair(index: int, publish_at: str) -> None:
 
     audio_en = os.path.join(OUTPUT_DIR, f"audio_{timestamp}_en.mp3")
     audio_th = os.path.join(OUTPUT_DIR, f"audio_{timestamp}_th.mp3")
+    sentences_th = [s.get("text_th", "") for s in data.get("sentences", [])]
     generate_voiceover(script_en, audio_en, lang="en", style=style)
-    _, th_boundaries = generate_voiceover(script_th, audio_th, lang="th", style=style)
+    _, th_boundaries = generate_voiceover(script_th, audio_th, lang="th",
+                                          style=style, sentences=sentences_th)
 
     from main import _sync_th_subs
     en_words = get_word_timestamps(audio_en, lang="en")
-    sentences_th = [s.get("text_th", "") for s in data.get("sentences", [])]
     th_words = _sync_th_subs(script_th, audio_th, sentences_th=sentences_th or None,
                              style=style,
-                             tts_boundaries=th_boundaries if style == "trending" else None)
+                             tts_boundaries=th_boundaries)
 
     mood  = data.get("music_mood", "dramatic")
     music = get_track(mood)

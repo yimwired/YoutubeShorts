@@ -13,22 +13,26 @@ DOWNLOADS  = os.path.expanduser("~/Downloads")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 ts = int(time.time())
-data = generate_fact_script(style="chaos")
+data = generate_fact_script(style="narrative")
 print(f"TH: {data['title_th']}")
 
-keywords = data.get("keywords", [])
-clips = fetch_multiple_clips(keywords, OUTPUT_DIR)
+sentences = data.get("sentences", [])
+kw_list = (
+    [{"specific": s.get("keyword", ""), "fallback": s.get("fallback", "")} for s in sentences]
+    if sentences else data.get("keywords", [])
+)
+clips = fetch_multiple_clips(kw_list, OUTPUT_DIR)
 print(f"  {len(clips)} clips")
 
 audio_th = os.path.join(OUTPUT_DIR, f"audio_{ts}_th.mp3")
-sentences_th = [s.get("text_th", "") for s in data.get("sentences", [])]
+sentences_th = [s.get("text_th", "") for s in sentences]
 _, th_boundaries = generate_voiceover(data["script_th"], audio_th, lang="th",
-                                       style="chaos", sentences=sentences_th)
+                                       style="narrative", sentences=sentences_th)
+print(f"  boundaries: {th_boundaries}")
 th_words = _sync_th_subs(data["script_th"], audio_th,
                          sentences_th=sentences_th or None,
-                         style="chaos",
+                         style="narrative",
                          tts_boundaries=th_boundaries)
-print(f"  boundaries: {th_boundaries}")
 print(f"  {len(th_words)} word chunks")
 
 thumb_th = os.path.join(OUTPUT_DIR, f"thumb_{ts}_th.jpg")
@@ -39,8 +43,8 @@ create_thumbnail("", data["title_en"], thumb_th, thai_ver=True,
 music = get_track(data.get("music_mood", "dramatic"))
 
 final = make_video(clips, audio_th, data["title_th"], th_words, ts, "th",
-                   music, thumb_path=thumb_th, cut_times=None, content_style="chaos")
-dest = os.path.join(DOWNLOADS, "chaos_เที่ยง_v1.mp4")
+                   music, thumb_path=thumb_th, cut_times=None, content_style="narrative")
+dest = os.path.join(DOWNLOADS, "narrative_เย็น_v1.mp4")
 shutil.copy(final, dest)
 print(f"Saved: {dest}")
 for c in clips: os.remove(c)

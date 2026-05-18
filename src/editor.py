@@ -17,7 +17,7 @@ def _ass_header(style: str = "trending") -> str:
     _styles = {
         "trending":  ("Kanit", 68,  "&H0000E0FF", "&H00FFFFFF", "&H00000000", "&H90000000"),
         "chaos":     ("Kanit", 78,  "&H000060FF", "&H00FFFFFF", "&H00000000", "&H90000000"),
-        "narrative": ("Sarabun", 58, "&H00E8E8E8", "&H00888888", "&H00000000", "&H80000000"),
+        "narrative": ("Kanit", 58,  "&H00E8E8E8", "&H00888888", "&H00000000", "&H80000000"),
     }
     font, size, pri, sec, outline, back = _styles.get(style, _styles["trending"])
     return f"""\
@@ -45,11 +45,13 @@ def _to_ass_time(s: float) -> str:
 
 
 def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
-    """Build ASS karaoke file. Style controls grouping and wrapping."""
+    """Build ASS karaoke file: one line per sentence with word-level highlight sweep.
+    Sentence breaks come from `break_after` flag (set by _subs_from_sentences);
+    pause-based and word-count splits act as fallbacks for legacy inputs."""
     is_narrative = style == "narrative"
-    max_words  = 10 if is_narrative else 4
-    pause_threshold = 0.6 if is_narrative else 0.3
-    max_chars  = 20 if is_narrative else 999  # wrap only for narrative
+    pause_threshold = 0.6 if is_narrative else 0.45
+    max_words = 999  # whole sentence stays on one line
+    max_chars = 22 if is_narrative else 18  # wrap long sentences across visual lines
 
     lines, current = [], []
     for i, w in enumerate(words):
@@ -58,9 +60,10 @@ def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
             continue
         current.append(w)
         is_last   = i == len(words) - 1
+        flagged   = bool(w.get("break_after"))
         has_pause = (i + 1 < len(words) and
                      words[i + 1]["start"] - w["end"] > pause_threshold)
-        if len(current) >= max_words or has_pause or is_last:
+        if flagged or len(current) >= max_words or has_pause or is_last:
             lines.append(current)
             current = []
 
@@ -87,20 +90,28 @@ def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
 
 
 def _burn_ass(src: str, ass_path: str, dst: str):
-    """Pass 2: burn ASS subtitle onto video. Run from ASS dir to avoid Windows path issues."""
-    ass_dir  = os.path.dirname(os.path.abspath(ass_path))
-    ass_name = os.path.basename(ass_path)
-    r = subprocess.run(
-        ["ffmpeg", "-y", "-i", os.path.abspath(src),
-         "-vf", f"ass={ass_name}",
-         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-         "-c:a", "copy", os.path.abspath(dst)],
-        capture_output=True, text=True,
-        cwd=ass_dir,
-    )
-    if r.returncode != 0:
-        print(r.stderr[-2000:])
-        raise RuntimeError("ASS burn failed")
+    """Pass 2: burn ASS subtitle onto video. Copies ass to repo root and runs ffmpeg
+    with cwd=_BASE so we can pass simple relative paths — avoids Windows colon-escape
+    issues in libavfilter parsing. fontsdir=. lets libass find bundled Kanit-Bold.ttf."""
+    import shutil
+    target_ass = os.path.join(_BASE, "_burn_temp.ass")
+    if os.path.abspath(ass_path) != target_ass:
+        shutil.copy(ass_path, target_ass)
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", os.path.abspath(src),
+             "-vf", "ass=_burn_temp.ass:fontsdir=.",
+             "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+             "-c:a", "copy", os.path.abspath(dst)],
+            capture_output=True, text=True,
+            cwd=_BASE,
+        )
+        if r.returncode != 0:
+            print(r.stderr[-2000:])
+            raise RuntimeError("ASS burn failed")
+    finally:
+        if os.path.exists(target_ass):
+            os.remove(target_ass)
 
 # Color scheme: white normal, red for emphasis (every ~5th word or last word of sentence)
 def _word_color(word: str, idx: int, total: int) -> str:

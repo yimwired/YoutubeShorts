@@ -107,61 +107,151 @@ def _make_th_subs(script_th: str, total_dur: float,
     return result
 
 
-def _get_sentence_timings(audio_path: str, n: int) -> list[tuple]:
-    """
-    Find n timing windows by detecting the n-1 largest pauses in the audio.
-    Uses Whisper word_timestamps for sub-segment pause resolution.
-    Works well for Neural TTS (PremwadeeNeural) which has clear inter-sentence pauses.
-    """
+def _silence_boundaries(audio_path: str, n: int,
+                        threshold_db: int = 28,
+                        min_silence: float = 0.15) -> list[dict]:
+    """Detect n sentence intervals via ffmpeg silencedetect.
+    Picks the n-1 longest silences as sentence breaks. Returns list of
+    {start, end} dicts. Empty list on failure or insufficient pauses."""
+    import subprocess, re as _re
+    if n <= 0:
+        return []
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-i", audio_path,
+             "-af", f"silencedetect=n=-{threshold_db}dB:d={min_silence}",
+             "-f", "null", "-"],
+            capture_output=True, text=True
+        )
+    except Exception:
+        return []
+
+    starts, ends = [], []
+    for line in r.stderr.splitlines():
+        m = _re.search(r"silence_start:\s*([\d.]+)", line)
+        if m:
+            starts.append(float(m.group(1)))
+            continue
+        m = _re.search(r"silence_end:\s*([\d.]+)", line)
+        if m:
+            ends.append(float(m.group(1)))
+
+    # Pair silences; drop a leading "0.0 → x" (TTS warmup, not a sentence break)
+    pairs = list(zip(starts, ends))
+    pairs = [(s, e) for s, e in pairs if s > 0.05]
+    if n == 1:
+        # Whole audio is one sentence — use audio duration
+        try:
+            dur = _clip_duration(audio_path)
+            # Skip TTS leading silence if present
+            head = ends[0] if (starts and starts[0] == 0 and ends) else 0.0
+            return [{"start": head, "end": dur}]
+        except Exception:
+            return []
+
+    if len(pairs) < n - 1:
+        return []
+
+    # Take n-1 longest silences ordered by time → these are sentence breaks
+    pairs_sorted = sorted(pairs, key=lambda p: p[1] - p[0], reverse=True)[:n - 1]
+    pairs_sorted.sort(key=lambda p: p[0])
+
+    try:
+        dur = _clip_duration(audio_path)
+    except Exception:
+        return []
+    head = ends[0] if (starts and starts[0] == 0 and ends) else 0.0
+    result = []
+    sent_start = head
+    for s, e in pairs_sorted:
+        result.append({"start": sent_start, "end": s})
+        sent_start = e
+    result.append({"start": sent_start, "end": dur})
+    return result
+
+
+def _whisper_word_events(audio_path: str) -> list[dict]:
+    """Whisper word-level events (start/end). Empty list on failure."""
     try:
         from src.captions import _get_model
         model = _get_model("base")
         segs, _ = model.transcribe(str(audio_path), language="th",
                                    word_timestamps=True)
-        segments = list(segs)
-        if not segments:
-            raise Exception("empty")
-
-        total = segments[-1].end
-
-        # Collect word-level timing events
-        events: list[tuple[float, float]] = []
-        for seg in segments:
+        events = []
+        for seg in segs:
             for w in seg.words:
                 if w.end > w.start:
-                    events.append((w.start, w.end))
-        events.sort()
-
-        if len(events) < 2:
-            raise Exception("too few events")
-
-        # Measure every gap between consecutive word events
-        gaps: list[tuple[float, float]] = []  # (gap_size, midpoint)
-        for i in range(1, len(events)):
-            gap = round(events[i][0] - events[i - 1][1], 4)
-            if gap >= 0.1:
-                mid = round((events[i - 1][1] + events[i][0]) / 2, 3)
-                gaps.append((gap, mid))
-
-        # Pick the n-1 largest gaps as sentence boundaries
-        gaps.sort(reverse=True)
-        split_points = sorted(mid for _, mid in gaps[:n - 1])
-
-        boundaries = [0.0] + split_points + [total]
-        return [(boundaries[i], boundaries[i + 1]) for i in range(n)]
-
+                    events.append({"start": float(w.start), "end": float(w.end)})
+        events.sort(key=lambda e: e["start"])
+        return events
     except Exception:
-        dur = _clip_duration(audio_path)
-        step = dur / n
-        return [(i * step, (i + 1) * step) for i in range(n)]
+        return []
+
+
+def _split_events_by_sentence(events: list[dict], n: int) -> list[list[dict]]:
+    """Cut event stream into n groups at the n-1 largest gaps between events.
+    If too few gaps, pad with evenly-spaced indices."""
+    if not events or n <= 1:
+        return [events] if events else []
+    gaps = []  # (gap, idx_to_cut_at)
+    for i in range(1, len(events)):
+        g = events[i]["start"] - events[i - 1]["end"]
+        if g > 0:
+            gaps.append((g, i))
+    gaps.sort(reverse=True)
+    cuts = sorted(idx for _, idx in gaps[:n - 1])
+    # Pad with even splits if Whisper didn't expose enough gaps
+    if len(cuts) < n - 1:
+        need = (n - 1) - len(cuts)
+        existing = set(cuts)
+        step = max(len(events) // n, 1)
+        for k in range(1, n):
+            idx = k * step
+            if idx not in existing and 0 < idx < len(events):
+                cuts.append(idx)
+                existing.add(idx)
+                if len(cuts) >= n - 1:
+                    break
+        cuts = sorted(cuts)[:n - 1]
+    # Final clamp in case events shorter than n
+    cuts = [c for c in cuts if 0 < c < len(events)]
+    while len(cuts) < n - 1:
+        cuts.append(len(events))
+    bounds = [0] + cuts + [len(events)]
+    return [events[bounds[i]:bounds[i + 1]] for i in range(n)]
+
+
+def _distribute_tokens(tokens: list[str], events: list[dict]) -> list[dict]:
+    """Anchor script tokens to Whisper events within one sentence.
+    Allocate by character weight — long tokens span more events than short ones.
+    Whisper Thai emits subword-level events, so a single PyThaiNLP token
+    usually maps to multiple events."""
+    if not tokens or not events:
+        return []
+    n_e = len(events)
+    total_chars = sum(len(t) for t in tokens) or 1
+    out = []
+    cum = 0
+    for tok in tokens:
+        e_lo = int(cum * n_e / total_chars)
+        cum += len(tok)
+        e_hi = max(int(cum * n_e / total_chars) - 1, e_lo)
+        e_lo = min(e_lo, n_e - 1)
+        e_hi = min(e_hi, n_e - 1)
+        out.append({
+            "word":  tok,
+            "start": round(events[e_lo]["start"], 3),
+            "end":   round(events[e_hi]["end"] - 0.04, 3),
+        })
+    return out
 
 
 def _subs_from_sentences(sentences_th: list, audio_path: str) -> list[dict]:
-    """
-    Subtitle from exact script text + Whisper-based sentence timing.
-    Text = correct (no Whisper transcription error)
-    Timing = from Whisper segment detection (includes natural pauses)
-    """
+    """Script text + word-event-anchored timing.
+    1) Whisper word_timestamps → event stream
+    2) Cut at n-1 largest gaps → one group per script sentence
+    3) Distribute that sentence's tokens across its event group (proportional, not uniform)
+    Fallback: uniform per-sentence split if Whisper fails."""
     import re
     try:
         from pythainlp.tokenize import word_tokenize
@@ -175,28 +265,46 @@ def _subs_from_sentences(sentences_th: list, audio_path: str) -> list[dict]:
     if not clean:
         return []
 
-    timings = _get_sentence_timings(audio_path, len(clean))
+    events = _whisper_word_events(audio_path)
+    if events:
+        groups = _split_events_by_sentence(events, len(clean))
+        result = []
+        for sentence, ev_group in zip(clean, groups):
+            tokens = tokenize(sentence)
+            sub = _distribute_tokens(tokens, ev_group)
+            if sub:
+                sub[-1]["break_after"] = True
+            result.extend(sub)
+        if result:
+            return result
+
+    # Fallback: uniform per-sentence split (legacy behavior)
+    dur  = _clip_duration(audio_path)
+    step = dur / len(clean)
     result = []
-
-    for sentence, (t_start, t_end) in zip(clean, timings):
-        words = tokenize(sentence)
-        if not words:
+    for i, sentence in enumerate(clean):
+        tokens = tokenize(sentence)
+        if not tokens:
             continue
-        sent_dur = max(t_end - t_start, 0.1)
-        word_dur = sent_dur / len(words)
-        for i, word in enumerate(words):
-            result.append({
-                "word":  word,
-                "start": round(t_start + i * word_dur, 3),
-                "end":   round(t_start + (i + 1) * word_dur - 0.04, 3),
-            })
-
+        t_start = i * step
+        word_dur = step / len(tokens)
+        for j, tok in enumerate(tokens):
+            entry = {
+                "word":  tok,
+                "start": round(t_start + j * word_dur, 3),
+                "end":   round(t_start + (j + 1) * word_dur - 0.04, 3),
+            }
+            if j == len(tokens) - 1:
+                entry["break_after"] = True
+            result.append(entry)
     return result
 
 
 def _subs_from_tts_boundaries(sentences_th: list,
                               boundaries: list[dict]) -> list[dict]:
-    """Exact script text timed by TTS SentenceBoundary events."""
+    """Script tokens timed by TTS SentenceBoundary events.
+    Within each sentence, tokens are weighted by character count so long words
+    span more time than short ones."""
     import re
     try:
         from pythainlp.tokenize import word_tokenize
@@ -214,18 +322,24 @@ def _subs_from_tts_boundaries(sentences_th: list,
     result = []
     n = min(len(clean), len(boundaries))
     for i in range(n):
-        words    = tokenize(clean[i])
+        words = tokenize(clean[i])
         if not words:
             continue
         b        = boundaries[i]
         sent_dur = max(b["end"] - b["start"], 0.1)
-        word_dur = sent_dur / len(words)
+        char_tot = sum(len(w) for w in words) or 1
+        offset   = 0.0
         for j, word in enumerate(words):
-            result.append({
+            d = sent_dur * len(word) / char_tot
+            entry = {
                 "word":  word,
-                "start": round(b["start"] + j * word_dur, 3),
-                "end":   round(b["start"] + (j + 1) * word_dur - 0.04, 3),
-            })
+                "start": round(b["start"] + offset, 3),
+                "end":   round(b["start"] + offset + d - 0.04, 3),
+            }
+            if j == len(words) - 1:
+                entry["break_after"] = True
+            result.append(entry)
+            offset += d
     return result
 
 
@@ -246,58 +360,32 @@ def _sync_th_subs(script_th: str, audio_path: str,
                   sentences_th: list = None,
                   style: str = "trending",
                   tts_boundaries: list = None) -> list[dict]:
-    if style == "narrative" and sentences_th:
-        return _subs_from_sentences(sentences_th, audio_path)
+    """Sub-voice sync priority:
+    1. ffmpeg silencedetect → actual TTS pauses (most reliable, works for any TH voice)
+    2. TTS SentenceBoundary events (if engine emits per-sentence, e.g. PremwadeeNeural EN)
+    3. Whisper word-event anchoring (fallback)
+    4. Plain script split (last resort)"""
+    if sentences_th:
+        n = len(sentences_th)
+        # 1. Try silence detection — TTS produces clean pauses between sentences
+        sil_bounds = _silence_boundaries(audio_path, n)
+        if sil_bounds and len(sil_bounds) == n:
+            raw = _subs_from_tts_boundaries(sentences_th, sil_bounds)
+            if raw:
+                return raw
 
-    # trending: prefer TTS boundaries (if coverage ≥70%), else Whisper+exact text
-    if style == "trending" and sentences_th:
-        if tts_boundaries and len(tts_boundaries) >= len(sentences_th) * 0.7:
+        # 2. TTS boundaries (need ≥70% coverage to trust)
+        if tts_boundaries and len(tts_boundaries) >= n * 0.7:
             raw = _subs_from_tts_boundaries(sentences_th, tts_boundaries)
-        else:
-            raw = _subs_from_sentences(sentences_th, audio_path)
+            if raw:
+                return raw
+
+        # 3. Whisper word events
+        raw = _subs_from_sentences(sentences_th, audio_path)
         if raw:
-            return _group_words(raw, chunk_size=3)
+            return raw
 
-
-
-    # chaos: original approach — Whisper base (no word_timestamps)
-    # → PyThaiNLP tokenize per segment → 2-word chunks with proportional timing
-    import re
-    try:
-        from src.captions import _get_model
-        model = _get_model("base")
-        segs, _ = model.transcribe(str(audio_path), language="th")
-        segments = list(segs)
-    except Exception:
-        return _make_th_subs(script_th, _clip_duration(audio_path))
-
-    if not segments:
-        return _make_th_subs(script_th, _clip_duration(audio_path))
-
-    result = []
-    for seg in segments:
-        text = re.sub(r"[^฀-๿\s]", "", seg.text).strip()
-        if not text:
-            continue
-        try:
-            from pythainlp.tokenize import word_tokenize
-            words = word_tokenize(text, engine="newmm", keep_whitespace=False)
-            words = [w for w in words if w.strip()]
-        except Exception:
-            words = [text]
-        chunks = ["".join(words[i:i+2]) for i in range(0, len(words), 2)]
-        chunks = [c for c in chunks if c]
-        if not chunks:
-            continue
-        seg_dur  = max(seg.end - seg.start, 0.1)
-        word_dur = seg_dur / len(chunks)
-        for i, chunk in enumerate(chunks):
-            result.append({
-                "word":  chunk,
-                "start": round(seg.start + i * word_dur, 3),
-                "end":   round(seg.start + (i+1) * word_dur - 0.06, 3),
-            })
-    return result if result else _make_th_subs(script_th, _clip_duration(audio_path))
+    return _make_th_subs(script_th, _clip_duration(audio_path))
 
 
 def _get_segment_cut_times(audio_path: str, lang: str) -> list[float]:
