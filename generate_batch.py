@@ -77,8 +77,13 @@ def generate_one_pair(index: int, publish_at: str) -> None:
     style     = SLOT_STYLES.get(slot_hour, "trending")
     print(f"\n[Batch {index+1}] ts={timestamp}  publish→{publish_at[:16]}  style={style}")
 
-    topic = get_trending_topic() if style == "trending" else None
-    print(f"  Topic: {topic or f'(auto — {style})'}")
+    # Google Trends RSS biases hard toward news/sports (Iran war, NASCAR,
+    # Liverpool etc.) which the generator then has to bend into a "fact".
+    # Default to category-bucket round-robin in src/generator.py; opt back
+    # in to RSS via USE_TRENDING_TOPIC=1 for time-sensitive runs.
+    use_rss = os.getenv("USE_TRENDING_TOPIC") == "1"
+    topic   = get_trending_topic() if (style == "trending" and use_rss) else None
+    print(f"  Topic: {topic or f'(bucket — {style})'}")
 
     data      = generate_fact_script(topic=topic, used_titles=load_history(), style=style)
     title_en  = data["title_en"]

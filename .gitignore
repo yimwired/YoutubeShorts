@@ -13,6 +13,9 @@ output/
 # Queue state (regenerated each run)
 queue/
 
+# Round-robin bucket index per slot style
+bucket_state.json
+
 # Python
 __pycache__/
 *.pyc

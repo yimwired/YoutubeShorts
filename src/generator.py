@@ -3,6 +3,28 @@ import json
 import requests
 from src.rate_tracker import record
 
+# Round-robin bucket index across slot styles. Persists between runs
+# so we don't bias toward whatever random.seed lands on each invocation.
+# Each style gets its own counter; index wraps when it exceeds list len.
+_BUCKET_STATE_FILE = "bucket_state.json"
+
+
+def _next_bucket(style: str, cats: list[str]) -> str:
+    try:
+        with open(_BUCKET_STATE_FILE, encoding="utf-8") as f:
+            state = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        state = {}
+    last = state.get(style, -1)
+    idx  = (last + 1) % len(cats)
+    state[style] = idx
+    try:
+        with open(_BUCKET_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+    except OSError:
+        pass
+    return cats[idx]
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -132,13 +154,12 @@ def generate_fact_script(topic: str = None, used_titles: list = None,
     }
     system = _prompts.get(style, SYSTEM_PROMPT_TRENDING)
 
-    import random
     cats = (
         _CHAOS_CATEGORIES     if style == "chaos"     else
         _NARRATIVE_CATEGORIES if style == "narrative" else
         _CATEGORIES
     )
-    category = topic if topic else random.choice(cats)
+    category = topic if topic else _next_bucket(style, cats)
     topic_hint = f" The fact MUST be about this category: '{category}'. Pick a specific surprising angle within it."
 
     if used_titles:
