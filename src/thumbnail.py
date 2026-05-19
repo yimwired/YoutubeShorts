@@ -29,14 +29,19 @@ def _extract_from_clip(clip_path: str, output_path: str, pct: float = 0.25) -> s
         return None
 
 
-def _fetch_pollinations(prompt: str, output_path: str) -> str | None:
-    """Generate image via Pollinations.ai (free, no key required)."""
+def _fetch_pollinations(prompt: str, output_path: str,
+                        seed: int | None = None) -> str | None:
+    """Generate image via Pollinations.ai (free, no key required).
+    `seed` lets the caller request distinct variants from the same
+    prompt (used for A/B thumbnails). Defaults to a hash of the prompt
+    so the original single-thumb path stays deterministic."""
     import urllib.parse
     p = (f"{prompt}, cinematic photography, dramatic lighting, "
          f"photorealistic, sharp focus, 9:16 vertical format")
+    s = seed if seed is not None else (hash(prompt) % 99999)
     url = (f"https://image.pollinations.ai/prompt/{urllib.parse.quote(p)}"
            f"?width=1080&height=1920&model=flux-pro&nologo=true"
-           f"&seed={hash(prompt) % 99999}")
+           f"&seed={s}")
     try:
         r = requests.get(url, timeout=90)
         if r.status_code == 200 and len(r.content) > 1000:
@@ -155,7 +160,8 @@ def create_thumbnail(video_path: str, title: str, output_path: str,
                      thai_ver: bool = False,
                      photo_keyword: str = None,
                      ai_prompt: str = None,
-                     clips: list = None) -> str:
+                     clips: list = None,
+                     seed: int | None = None) -> str:
 
     # ── Background priority: Pollinations AI → clip frame → Pexels → video frame → dark ──
     bg_path = output_path.replace(".jpg", "_bg.jpg")
@@ -163,8 +169,8 @@ def create_thumbnail(video_path: str, title: str, output_path: str,
 
     # 1. Pollinations AI — prompt is topic-specific, most relevant for thumbnail
     if ai_prompt:
-        print(f"    [Thumbnail] Generating AI image (flux-pro)...")
-        got_bg = bool(_fetch_pollinations(ai_prompt, bg_path))
+        print(f"    [Thumbnail] Generating AI image (flux-pro, seed={seed})...")
+        got_bg = bool(_fetch_pollinations(ai_prompt, bg_path, seed=seed))
         if got_bg:
             print(f"    [Thumbnail] AI image OK")
 

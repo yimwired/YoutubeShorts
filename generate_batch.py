@@ -114,12 +114,30 @@ def generate_one_pair(index: int, publish_at: str) -> None:
 
     thumb_keyword = data.get("thumbnail_keyword")
     ai_prompt     = data.get("thumbnail_prompt")
-    thumb_en = os.path.join(OUTPUT_DIR, f"thumb_{timestamp}_en.jpg")
-    thumb_th = os.path.join(OUTPUT_DIR, f"thumb_{timestamp}_th.jpg")
+    thumb_en   = os.path.join(OUTPUT_DIR, f"thumb_{timestamp}_en.jpg")
+    thumb_th   = os.path.join(OUTPUT_DIR, f"thumb_{timestamp}_th.jpg")
+    thumb_en_b = os.path.join(OUTPUT_DIR, f"thumb_{timestamp}_en_b.jpg")
+    thumb_th_b = os.path.join(OUTPUT_DIR, f"thumb_{timestamp}_th_b.jpg")
+    # A: deterministic from prompt (existing behavior).
+    # B: same prompt, different seed -- A/B candidate for post-24h swap
+    # based on CTR (see swap_thumbnails.py, Phase 2).
+    seed_a = (hash(ai_prompt or title_en) % 99999) if ai_prompt else None
+    seed_b = ((seed_a or 0) + 41337) % 99999 if ai_prompt else None
     create_thumbnail(None, title_en, thumb_en,
-                     thai_ver=False, photo_keyword=thumb_keyword, ai_prompt=ai_prompt)
+                     thai_ver=False, photo_keyword=thumb_keyword,
+                     ai_prompt=ai_prompt, seed=seed_a)
     create_thumbnail(None, title_en, thumb_th,
-                     thai_ver=True, photo_keyword=thumb_keyword, ai_prompt=ai_prompt)
+                     thai_ver=True, photo_keyword=thumb_keyword,
+                     ai_prompt=ai_prompt, seed=seed_a)
+    if ai_prompt:
+        create_thumbnail(None, title_en, thumb_en_b,
+                         thai_ver=False, photo_keyword=thumb_keyword,
+                         ai_prompt=ai_prompt, seed=seed_b)
+        create_thumbnail(None, title_en, thumb_th_b,
+                         thai_ver=True, photo_keyword=thumb_keyword,
+                         ai_prompt=ai_prompt, seed=seed_b)
+    else:
+        thumb_en_b = thumb_th_b = None
 
     final_en = make_video(clips, audio_en, title_en, en_words, timestamp, "en", music,
                           thumb_path=thumb_en, content_style=style)
@@ -146,11 +164,11 @@ def generate_one_pair(index: int, publish_at: str) -> None:
         suffix = " " + " ".join(["#Shorts"] + picked)
         return (title[:max_len - len(suffix)] + suffix).strip()
 
-    for lang, title, title_full, video_path, thumb_path, desc, hashtags in [
+    for lang, title, title_full, video_path, thumb_path, thumb_path_b, desc, hashtags in [
         ("en", title_en, _title_with_tags(title_en, hashtags_en),
-         final_en, thumb_en, desc_en, hashtags_en),
+         final_en, thumb_en, thumb_en_b, desc_en, hashtags_en),
         ("th", title_th, _title_with_tags(title_th, hashtags_th),
-         final_th, thumb_th, desc_th, hashtags_th),
+         final_th, thumb_th, thumb_th_b, desc_th, hashtags_th),
     ]:
         # Log to Notion immediately as "Scheduled"
         notion_page_id = log_scheduled(
@@ -170,6 +188,8 @@ def generate_one_pair(index: int, publish_at: str) -> None:
             "topic":          topic or "",
             "video_path":     video_path,
             "thumb_path":     thumb_path,
+            "thumb_path_b":   thumb_path_b,    # A/B candidate; swap if CTR low
+            "ab_swapped":     False,
             "publish_at":     publish_at,
             "notion_page_id": notion_page_id,
             "created_at":     datetime.now(BKK).isoformat(),
@@ -204,6 +224,10 @@ def generate_one_pair(index: int, publish_at: str) -> None:
             job["youtube_url"]      = yt_url
             job["youtube_video_id"] = yt_id
             job["tiktok_url"]       = tt_url
+            # uploaded_at is the wall-clock moment the YouTube insert
+            # returned -- used by swap_thumbnails.py to decide when the
+            # 24h CTR window has elapsed (publish_at can be much later).
+            job["uploaded_at"]      = datetime.now(BKK).isoformat()
             with open(job_path, "w", encoding="utf-8") as f:
                 json.dump(job, f, ensure_ascii=False, indent=2)
             if notion_page_id:
