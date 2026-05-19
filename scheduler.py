@@ -100,14 +100,21 @@ def _upload_job(job: dict, publish_at: str) -> None:
 
 # ── Catchup on startup ────────────────────────────────────────────────────────
 
+STALE_LOST_AGE_DAYS = 7  # uploaded+vid=None this old = upload was lost, drop it
+
 def catchup() -> None:
     """
     Run on every startup:
     1. Jobs status='uploaded' + publish_at in past → check if YouTube went public
        → if yes: update Notion + delete job
+       → if status=uploaded but vid_id missing and job is older than
+         STALE_LOST_AGE_DAYS: treat as lost upload and delete (otherwise
+         the job sticks in the queue forever because check_video_public
+         can never succeed without a video id).
     2. Jobs status='pending'  + publish_at in past → missed slot → upload now as public
     """
     print("[Catchup] Checking queue...")
+    now = datetime.now(BKK)
 
     # --- Check uploaded jobs that should be live by now ---
     for job in _load_jobs("uploaded"):
@@ -124,8 +131,21 @@ def catchup() -> None:
             if notion_id:
                 mark_uploaded(notion_id, youtube_url=yt_url, tiktok_url=tt_url)
             os.remove(job["_file"])
-        else:
-            print(f"  [Catchup] Not public yet: {title[:50]} (vid={vid_id})")
+            continue
+
+        if not vid_id:
+            created = job.get("created_at") or job.get("uploaded_at")
+            try:
+                age_days = (now - datetime.fromisoformat(created)).days if created else None
+            except Exception:
+                age_days = None
+            if age_days is not None and age_days >= STALE_LOST_AGE_DAYS:
+                print(f"  [Catchup] Lost upload (no vid_id, age {age_days}d): "
+                      f"{title[:50]} — removing job")
+                os.remove(job["_file"])
+                continue
+
+        print(f"  [Catchup] Not public yet: {title[:50]} (vid={vid_id})")
 
     # --- Handle missed pending slots ---
     missed = [j for j in _load_jobs("pending") if _is_past(j.get("publish_at", ""))]
