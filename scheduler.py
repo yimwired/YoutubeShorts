@@ -92,6 +92,7 @@ def _upload_job(job: dict, publish_at: str) -> None:
     job["youtube_video_id"] = yt_id
     job["youtube_url"]      = yt_url
     job["tiktok_url"]       = tt_url
+    job["uploaded_at"]      = datetime.now(BKK).isoformat()
     _save_job(job)
 
     print(f"  [Queue] Scheduled: [{lang.upper()}] {title[:40]} → live at {publish_at[:16]}")
