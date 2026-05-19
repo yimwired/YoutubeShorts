@@ -186,9 +186,17 @@ def generate_one_pair(index: int, publish_at: str) -> None:
             thumbnail_path=thumb_path,
             lang=lang, publish_at=publish_at,
         )
-        # TikTok upload (uses native scheduling if publish_at is 15min-10day out)
-        tt_title = title if lang == "en" else f"{title_en} Thai Ver"
-        tt_url   = upload_tiktok(video_path, tt_title, publish_at=publish_at)
+        # TikTok upload — disabled until official Content Posting API
+        # is approved. The cookie path via tiktok-uploader 1.2.0 is
+        # broken: TikTok rolled out a new UI (2026-05) and the lib's
+        # xpath selectors (e.g. //*[@id='tux-1']) no longer resolve, so
+        # both _set_interactivity and _set_schedule_video time out.
+        # Re-enable by setting TIKTOK_ENABLED=1 in the env once the
+        # official API path is live (see src/tiktok_api.py).
+        tt_url = None
+        if os.getenv("TIKTOK_ENABLED") == "1":
+            tt_title = title if lang == "en" else f"{title_en} Thai Ver"
+            tt_url   = upload_tiktok(video_path, tt_title, publish_at=publish_at)
 
         if result:
             yt_url, yt_id = result

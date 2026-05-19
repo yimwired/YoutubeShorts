@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -105,58 +106,47 @@ def check_video_public(video_id: str) -> bool:
 
 def upload_tiktok(video_path: str, title: str,
                   publish_at: str = None) -> str | None:
-    """Upload video to TikTok via tiktok-uploader (cookie-based).
-    Requires TIKTOK_SESSIONID in env. Returns profile URL on success.
-    If publish_at is provided (ISO string), TikTok native scheduling is used.
-    TikTok constraint: schedule must be between 15min and 10 days from now."""
-    sessionid = os.getenv("TIKTOK_SESSIONID")
-    if not sessionid:
+    """Upload video to TikTok via cookie-based path.
+
+    Runs the actual Playwright upload in a subprocess (`src._tiktok_cookie`)
+    so the sync Playwright event loop doesn't leak into the caller and
+    break subsequent edge-tts / asyncio.run() calls.
+
+    Requires TIKTOK_SESSIONID env. Returns profile URL on success, None on
+    failure. publish_at ISO string triggers TikTok native scheduling when
+    inside the 15min..10day window.
+    """
+    if not os.getenv("TIKTOK_SESSIONID"):
         print(f"  [TikTok] No TIKTOK_SESSIONID set — skipping: {video_path}")
         return None
 
-    try:
-        from tiktok_uploader.upload import upload_video
-    except ImportError:
-        print(f"  [TikTok] tiktok-uploader not installed — pip install tiktok-uploader")
-        return None
-
-    schedule = None
+    import subprocess
+    cmd = [sys.executable, "-m", "src._tiktok_cookie", video_path, title]
     if publish_at:
-        from datetime import datetime, timezone, timedelta
-        try:
-            t = datetime.fromisoformat(publish_at)
-            if t.tzinfo is None:
-                t = t.replace(tzinfo=timezone.utc)
-            t_utc = t.astimezone(timezone.utc)
-            now_utc = datetime.now(timezone.utc)
-            # Only schedule if within TikTok's 15min..10day window
-            if timedelta(minutes=15) <= (t_utc - now_utc) <= timedelta(days=10):
-                schedule = t_utc
-        except Exception:
-            pass
+        cmd.append(publish_at)
 
-    # Build cookies_list manually — lib's sessionid path drops the domain
-    cookies_list = [{
-        "name":   "sessionid",
-        "value":  sessionid,
-        "domain": ".tiktok.com",
-        "path":   "/",
-    }]
-
-    print(f"  [TikTok] Uploading: {title[:50]}...")
+    print(f"  [TikTok] Uploading (subprocess): {title[:50]}...")
     try:
-        failed = upload_video(
-            filename=video_path,
-            description=title,
-            cookies_list=cookies_list,
-            schedule=schedule,
-            headless=False,
+        r = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            timeout=15 * 60,
         )
-        if failed:
-            print(f"  [TikTok] Failed: {failed}")
-            return None
-        print(f"  [TikTok] Done (scheduled={schedule is not None})")
-        return "https://www.tiktok.com/@me"
-    except Exception as e:
-        print(f"  [TikTok] Error: {e}")
+    except subprocess.TimeoutExpired:
+        print("  [TikTok] subprocess timeout (>15min) — skipping")
         return None
+    except Exception as e:
+        print(f"  [TikTok] subprocess error: {e}")
+        return None
+
+    # Surface child stderr (progress / errors) so the batch log shows it.
+    if r.stderr:
+        for line in r.stderr.rstrip().splitlines()[-12:]:
+            print(f"  [TikTok] {line}")
+
+    if r.returncode == 0:
+        url = (r.stdout or "").strip().splitlines()[-1] if r.stdout else ""
+        print(f"  [TikTok] Done")
+        return url or "https://www.tiktok.com/@me"
+    print(f"  [TikTok] Failed (exit {r.returncode})")
+    return None
