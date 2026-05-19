@@ -15,12 +15,23 @@ import os
 import sys
 import json
 import time
+import base64
+import hashlib
+import secrets
 import threading
 import urllib.parse
 import webbrowser
 import http.server
 import socketserver
 import requests
+
+
+def _pkce_pair() -> tuple[str, str]:
+    """Return (code_verifier, code_challenge) for PKCE S256."""
+    verifier = secrets.token_urlsafe(64)[:96]
+    digest   = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
 
 TOKEN_FILE   = "token_tiktok.json"
 REDIRECT_URI = "http://localhost:8080/callback"
@@ -103,14 +114,17 @@ def login() -> dict:
         raise RuntimeError("TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET not set")
     key, secret = creds
 
+    verifier, challenge = _pkce_pair()
     auth_url = (
         OAUTH_AUTHORIZE
         + "?" + urllib.parse.urlencode({
-            "client_key":    key,
-            "scope":         SCOPES,
-            "response_type": "code",
-            "redirect_uri":  REDIRECT_URI,
-            "state":         "fs",
+            "client_key":            key,
+            "scope":                 SCOPES,
+            "response_type":         "code",
+            "redirect_uri":          REDIRECT_URI,
+            "state":                 "fs",
+            "code_challenge":        challenge,
+            "code_challenge_method": "S256",
         })
     )
     print(f"[TikTok API] Opening browser for authorization...")
@@ -132,6 +146,7 @@ def login() -> dict:
             "code":          code,
             "grant_type":    "authorization_code",
             "redirect_uri":  REDIRECT_URI,
+            "code_verifier": verifier,
         },
         timeout=30,
     )
