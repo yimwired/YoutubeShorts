@@ -76,6 +76,36 @@ def log_scheduled(title: str, publish_at: str, lang: str = "en",
         return None
 
 
+def update_analytics(page_id: str, views: int, retention: float,
+                     watch_minutes: int, ab_variant: str = None) -> None:
+    """Patch an existing Notion entry with analytics columns.
+
+    Notion DB must have number properties Views / Retention % /
+    Watch Minutes and (optional) select property Thumb Variant. If a
+    column is missing Notion ignores the unknown key; the call still
+    succeeds for the columns that exist."""
+    if not page_id or not TOKEN():
+        return
+    try:
+        props = {
+            "Views":         {"number": int(views)},
+            "Retention %":   {"number": round(float(retention), 2)},
+            "Watch Minutes": {"number": int(watch_minutes)},
+        }
+        if ab_variant:
+            props["Thumb Variant"] = {"select": {"name": ab_variant}}
+        r = requests.patch(
+            f"https://api.notion.com/v1/pages/{page_id}",
+            headers=_HEADERS(),
+            json={"properties": props},
+        )
+        r.raise_for_status()
+        print(f"  [Notion] Analytics updated: {page_id[:8]}... "
+              f"views={views} retention={retention:.1f}%")
+    except Exception as e:
+        print(f"  [Notion] Analytics update failed: {e}")
+
+
 def mark_uploaded(page_id: str, youtube_url=None,
                   tiktok_url: str = None) -> None:
     """Update an existing Notion entry to Status='Uploaded' after publishing."""
