@@ -291,6 +291,35 @@ def append_outro_card(video_path: str, lang: str = "en",
     return video_path
 
 
+def _hook_overlay(style: str, lang: str) -> str:
+    """Return a single ffmpeg drawtext filter that shows a big retention
+    hook line during the first 2 seconds. Fades in/out and bounces a few
+    pixels so the eye locks on. Sits above the subtitle band so it never
+    fights captions."""
+    HOOKS = {
+        "trending":  {"en": "DID YOU KNOW?",  "th": "รู้หรือเปล่า?", "color": "#FFE000"},
+        "chaos":     {"en": "WAIT FOR IT...", "th": "ห้ามพลาด",     "color": "#FF2EA0"},
+        "narrative": {"en": "TRUE STORY",     "th": "เรื่องจริง",  "color": "#00E0FF"},
+    }
+    h    = HOOKS.get(style, HOOKS["trending"])
+    text = h["en"] if lang == "en" else h["th"]
+    font = FONT_EN if lang == "en" else FONT_TH
+    # Fade-in 0.25s, hold to 1.6s, fade-out to 2.0s.
+    alpha = ("if(lt(t,0.25),t/0.25,"
+             "if(lt(t,1.6),1,"
+             "if(lt(t,2.0),(2.0-t)/0.4,0)))")
+    # Subtle bounce -- amplitude ~8px around y = 18% of height.
+    y_expr = "h*0.18+sin(t*9)*8"
+    return (
+        f"drawtext=fontfile='{font}':text='{_escape(text)}':"
+        f"fontsize=132:fontcolor={h['color']}:"
+        f"borderw=6:bordercolor=black:"
+        f"x=(w-text_w)/2:y={y_expr}:"
+        f"alpha='{alpha}':"
+        f"enable='between(t\\,0\\,2.0)'"
+    )
+
+
 def create_short(video_path: str, audio_path: str, title: str, script: str,
                  output_path: str, words: list[dict] = None,
                  clips: list[str] = None, lang: str = "en",
@@ -343,6 +372,12 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
 
     # ── Text overlays ────────────────────────────────────────────
     text_parts = []
+
+    # 0..2s retention hook -- big colored line above the subtitle band,
+    # fades in/out with a subtle bounce. Style-specific copy makes the
+    # first frame promise something so viewers wait past the swipe-away
+    # threshold.
+    text_parts.append(_hook_overlay(content_style, lang))
 
     if lang == "th":
         pass  # all TH styles: ASS karaoke in pass 2 (see below)
