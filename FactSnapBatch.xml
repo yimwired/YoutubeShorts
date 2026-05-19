@@ -9,7 +9,7 @@
     <LogonTrigger>
       <Enabled>true</Enabled>
       <UserId>fyimn</UserId>
-      <Delay>PT2M</Delay>
+      <Delay>PT1M</Delay>
     </LogonTrigger>
     <BootTrigger>
       <Enabled>true</Enabled>
@@ -17,6 +17,13 @@
     </BootTrigger>
     <CalendarTrigger>
       <StartBoundary>2026-05-19T12:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+    <CalendarTrigger>
+      <StartBoundary>2026-05-19T18:00:00</StartBoundary>
       <Enabled>true</Enabled>
       <ScheduleByDay>
         <DaysInterval>1</DaysInterval>
