@@ -229,6 +229,68 @@ def prepend_title_card(video_path: str, thumb_path: str, title: str,
     return video_path
 
 
+def append_outro_card(video_path: str, lang: str = "en",
+                      duration: float = 1.5) -> str:
+    """Append a short end-card prompting follow / next video.
+
+    Black background + two lines of text + silent audio, then concat onto
+    the input video. ~1.5s default. Silent so it doesn't fight the
+    voiceover fade-out."""
+    if not os.path.exists(video_path):
+        return video_path
+
+    out_path = video_path.replace(".mp4", "_outro.mp4")
+
+    if lang == "th":
+        top  = "ติดตาม"
+        sub  = "เพื่อดูเรื่องน่ารู้"
+        font = FONT_TH
+    else:
+        top  = "FOLLOW"
+        sub  = "for more facts"
+        font = FONT_EN
+
+    fc = (
+        f"[1:v]drawtext=fontfile='{font}':text='{_escape(top)}':"
+        f"fontsize=160:fontcolor=white:"
+        f"box=1:boxcolor=black@0.0:boxborderw=0:"
+        f"x=(w-text_w)/2:y=h*0.36,"
+        f"drawtext=fontfile='{font}':text='{_escape(sub)}':"
+        f"fontsize=72:fontcolor=#FFE000:"
+        f"x=(w-text_w)/2:y=h*0.55[card_v];"
+        f"[0:v][0:a][card_v][2:a]concat=n=2:v=1:a=1[outv][outa]"
+    )
+
+    fc_file = tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
+                                          delete=False, encoding='utf-8')
+    fc_file.write(fc)
+    fc_file.close()
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-f", "lavfi", "-t", str(duration), "-i", "color=c=black:s=1080x1920:r=30",
+        "-f", "lavfi", "-t", str(duration), "-i", "aevalsrc=0:c=stereo:s=44100",
+        "-filter_complex_script", fc_file.name,
+        "-map", "[outv]", "-map", "[outa]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-c:a", "aac", "-b:a", "128k",
+        out_path,
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    os.unlink(fc_file.name)
+
+    if r.returncode != 0:
+        print("  [OutroCard] Failed — skipping")
+        print((r.stderr or "")[-800:])
+        return video_path
+
+    os.remove(video_path)
+    os.rename(out_path, video_path)
+    return video_path
+
+
 def create_short(video_path: str, audio_path: str, title: str, script: str,
                  output_path: str, words: list[dict] = None,
                  clips: list[str] = None, lang: str = "en",

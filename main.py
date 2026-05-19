@@ -11,7 +11,7 @@ from src.footage import fetch_multiple_clips
 from src.tts import generate_voiceover
 from src.captions import get_word_timestamps
 from src.thumbnail import create_thumbnail
-from src.editor import create_short, _clip_duration, prepend_title_card
+from src.editor import create_short, _clip_duration, prepend_title_card, append_outro_card
 from src.uploader import upload_youtube, upload_tiktok
 from src.rate_tracker import summary as usage_summary
 from src.notion_logger import log_video
@@ -412,6 +412,8 @@ def make_video(clips: list[str], audio_path: str, title: str,
     if thumb_path and os.path.exists(thumb_path):
         print(f"  [{lang.upper()}] Adding title card...")
         prepend_title_card(final_path, thumb_path, title, lang)
+    print(f"  [{lang.upper()}] Adding outro card...")
+    append_outro_card(final_path, lang)
     print(f"  [{lang.upper()}] Saved: {final_path}")
     return final_path
 
