@@ -325,7 +325,8 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
                  clips: list[str] = None, lang: str = "en",
                  music_path: str = None,
                  cut_times: list[float] = None,
-                 content_style: str = "trending") -> str:
+                 content_style: str = "trending",
+                 entity_overlays: list[dict] = None) -> str:
 
     audio_dur = min(_clip_duration(audio_path) + 0.5, 58.0)
 
@@ -339,7 +340,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
             "-stream_loop", "-1", "-i", music_path,
             "-filter_complex",
             (f"[0:a]volume=1.0[vo];"
-             f"[1:a]atrim=duration={audio_dur},asetpts=PTS-STARTPTS,volume=0.22[bg];"
+             f"[1:a]atrim=duration={audio_dur},asetpts=PTS-STARTPTS,volume=0.13[bg];"
              f"[vo][bg]amix=inputs=2:duration=first[aout]"),
             "-map", "[aout]",
             "-c:a", "aac", "-b:a", "128k",
@@ -429,7 +430,8 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
             text_parts.append(
                 f"drawtext=fontfile='{FONT_EN}':text='{text}':"
                 f"fontsize={st['size']}:fontcolor={color}:"
-                f"box=1:boxcolor=black@0.85:boxborderw=12:"
+                f"bordercolor=black:borderw=6:"
+                f"shadowcolor=black@0.7:shadowx=3:shadowy=3:"
                 f"x=(w-text_w)/2:y=(h-text_h)/2+160:"
                 f"enable='between(t\\,{t_start}\\,{t_end})'"
             )
@@ -438,7 +440,9 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
         caption = _escape(script[:80])
         text_parts.append(
             f"drawtext=fontfile='{FONT_EN}':text='{caption}':"
-            f"fontsize=60:fontcolor=white:box=1:boxcolor=black@0.85:boxborderw=12:"
+            f"fontsize=60:fontcolor=white:"
+            f"bordercolor=black:borderw=6:"
+            f"shadowcolor=black@0.7:shadowx=3:shadowy=3:"
             f"x=(w-text_w)/2:y=h*0.70"
         )
 
@@ -455,15 +459,56 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
 
     base_fc = ";".join(seg_filters + [concat_filter])
 
+    # ── Entity image overlays (real-world people/places/events) ──
+    # Each overlay: {"image_path": str, "start": float, "end": float}
+    # Skipped silently if file missing or invalid times.
+    valid_overlays = []
+    for ov in (entity_overlays or []):
+        ip, s, e = ov.get("image_path"), ov.get("start"), ov.get("end")
+        if ip and os.path.exists(ip) and s is not None and e is not None and e > s:
+            valid_overlays.append({"image_path": ip, "start": float(s), "end": float(e)})
+
+    first_overlay_idx = (logo_idx + 1) if has_logo else (n_clips + 1)
+
+    def _build_overlay_chain(in_label: str) -> tuple[str, str]:
+        """Return (filter_fragment, final_label) that overlays each entity image
+        on top of `in_label` in turn. If no overlays, returns ('', in_label)."""
+        if not valid_overlays:
+            return "", in_label
+        parts = []
+        cur = in_label
+        for i, ov in enumerate(valid_overlays):
+            idx   = first_overlay_idx + i
+            tag   = f"ent{i}"
+            # 320px wide, semi-transparent white border, top-right corner with
+            # 90px margin from top to clear the hook overlay band.
+            parts.append(
+                f"[{idx}:v]scale=320:-1,pad=iw+12:ih+12:6:6:color=white@0.95,"
+                f"format=rgba,colorchannelmixer=aa=1.0[{tag}_img]"
+            )
+            nxt = f"vov{i}"
+            parts.append(
+                f"[{cur}][{tag}_img]overlay=W-w-30:90:"
+                f"enable='between(t\\,{ov['start']:.3f}\\,{ov['end']:.3f})'[{nxt}]"
+            )
+            cur = nxt
+        return ";".join(parts), cur
+
     if has_logo:
-        filter_complex = (
-            base_fc + ";" + text_chain + ";" +
+        text_and_logo = (
+            text_chain + ";" +
             f"[{logo_idx}:v]scale=110:-1,format=rgba,colorchannelmixer=aa=0.85[logo];"
-            f"[vtxt][logo]overlay=20:20[v]"
+            f"[vtxt][logo]overlay=20:20[vlogo]"
         )
+        ov_chain, final_label = _build_overlay_chain("vlogo")
+        filter_complex = base_fc + ";" + text_and_logo + (";" + ov_chain if ov_chain else "")
+        if final_label != "v":
+            filter_complex += f";[{final_label}]copy[v]"
     else:
-        # No logo — rename [vtxt] → [v]
-        filter_complex = base_fc + ";" + text_chain.replace("[vtxt]", "[v]")
+        ov_chain, final_label = _build_overlay_chain("vtxt")
+        filter_complex = base_fc + ";" + text_chain + (";" + ov_chain if ov_chain else "")
+        if final_label != "v":
+            filter_complex += f";[{final_label}]copy[v]"
 
     # ── FFmpeg command ───────────────────────────────────────────
     cmd = ["ffmpeg", "-y"]
@@ -472,6 +517,8 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
     cmd += ["-i", final_audio]
     if has_logo:
         cmd += ["-i", LOGO_PATH]
+    for ov in valid_overlays:
+        cmd += ["-i", ov["image_path"]]
     audio_map = f"{audio_idx}:a"
 
     # Write filter_complex to temp file

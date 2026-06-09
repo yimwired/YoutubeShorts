@@ -1,4 +1,5 @@
 anthropic
+google-genai
 moviepy
 ffmpeg-python
 requests

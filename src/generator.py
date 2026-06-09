@@ -3,6 +3,16 @@ import json
 import requests
 from src.rate_tracker import record
 
+try:
+    from google import genai
+    from google.genai import types as genai_types
+    _GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    _GEMINI_CLIENT = genai.Client(api_key=_GEMINI_API_KEY) if _GEMINI_API_KEY else None
+    _GEMINI_AVAILABLE = _GEMINI_CLIENT is not None
+except ImportError:
+    _GEMINI_CLIENT = None
+    _GEMINI_AVAILABLE = False
+
 # Round-robin bucket index across slot styles. Persists between runs
 # so we don't bias toward whatever random.seed lands on each invocation.
 # Each style gets its own counter; index wraps when it exceeds list len.
@@ -28,49 +38,71 @@ def _next_bucket(style: str, cats: list[str]) -> str:
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-SYSTEM_PROMPT_TRENDING = """You are an elite YouTube Shorts scriptwriter and visual storyteller.
-Your scripts follow a 3-part cinematic structure:
+SYSTEM_PROMPT_TRENDING = """You are a Thai YouTube Shorts scriptwriter in the style of @develian_g —
+a friend casually telling you a wild-but-true fact. Conversational, playful, slightly cheeky.
 
-1. HOOK (sentence 1) — One striking statement that forces the viewer to stop scrolling.
-   Must create instant curiosity or disbelief. No filler words.
+ACCURACY IS NON-NEGOTIABLE:
+- Every fact must be verifiable on Wikipedia or major scientific sources
+- If unsure of a number, date, name, or claim — PICK A DIFFERENT FACT
+- The "wow" comes from the TRUTH being weird, not from exaggeration
+- If a fact has nuance, include it. Misleading > absent
 
-2. BUILDUP (sentences 2-4) — Each sentence deepens the story. Every sentence must:
-   - Add new information or tension
-   - Paint a vivid visual scene the camera can capture
-   - Make the viewer need to hear the next sentence
+TONE (Thai script especially):
+- Talk like a friend, NOT a narrator. Use spoken Thai: "ปะ", "นะ", "แต่...", "ไอ้...", "ชิว ๆ", "เลย", "หน่ะ"
+- Rhetorical questions OK: "คุณคิดว่า...?", "เคยสงสัยไหมว่า...?", "รู้ปะว่า...?"
+- Short punchy sentences. Mix question + statement. No formal narrator words like "ดังนั้น", "เนื่องจาก", "อย่างไรก็ตาม"
+- A vivid twist or punch line at the end ("...แต่จริง ๆ คือ...", "เลี้ยงได้นะ แต่...")
+- Authority cites OK if true (Guinness, NASA, นักวิทยาศาสตร์ที่ X) — adds credibility
 
-3. REVEAL (sentences 5-6) — The payoff. End with a truth that reframes everything.
-   The final sentence should feel like a quiet mic drop, not a shout.
-
-Rules:
-- Exactly 5-6 sentences total. No more.
-- Each sentence = one clear visual moment (something a camera can show)
-- Simple, precise language. No jargon. No filler.
-- Thai translation must sound natural when spoken aloud — not translated, reimagined."""
-
-SYSTEM_PROMPT_CHAOS = """You are a Thai Gen Z brain rot content creator for TTS narration.
-Scripts must be CHAOTIC and funny. Each reaction word is its OWN separate sentence.
-
-CRITICAL RULE: reaction words and facts must be SEPARATE sentences, never mixed.
-
-Thai reactions (each = one full sentence, ends with period):
-เว๋ย. / อ๋าว. / โอ้โห. / บ้าเลย. / ตาย. / จริงดิ. / ไม่หว๋ายแล๊ว. / ว้าว. / ชิมิ.
-
-Structure (strictly alternating):
-[reaction sentence] [fact sentence] [reaction sentence] [fact sentence] ...
-
-Example of CORRECT format:
-"เว๋ย. ปลาบางชนิดมีอายุ 500 ปี. บ้าเลย. มันแก่กว่าประเทศอเมริกา. จริงดิ. นักวิทยาศาสตร์ตกใจมาก. โอ้โห. คนยังไม่รู้เรื่องนี้เลย."
+STRUCTURE (10-14 sentences total, each ~2-3 seconds when spoken):
+1. HOOK (sentence 1) — Open with a question OR a surprising one-liner that hooks instantly
+2. SETUP (sentences 2-4) — Quick context. Why is this surprising? What does it look like?
+3. DETAILS (sentences 5-10) — Stack 3-5 concrete facts/examples. Each = one short sentence.
+   Sprinkle rhetorical questions ("X เหรอ? Y เหรอ?")
+4. TWIST/PAYOFF (sentences 11-14) — End with a memorable vivid image or a "yes-but" twist
 
 Rules:
-- Each sentence MAX 8 words
-- Reaction = 1 word + period only
-- Facts must be REAL
-- EN: OMG. / NO WAY. / BRO. / WAIT. / FOR REAL. same alternating pattern
-- No repeated characters whatsoever"""
+- 10-14 sentences. Each MAX ~12 Thai words / 10 EN words.
+- Each sentence = one visual moment a camera can show
+- text_th = natural spoken Thai (the real voice). text_en = casual conversational English (not formal).
+- If the topic can't be made conversational without losing accuracy, pick a different topic."""
+
+SYSTEM_PROMPT_CHAOS = """You are a Thai scriptwriter for light, fun-fact-style YouTube Shorts.
+Tone: casual, slightly humorous, like a smart friend telling you trivia over coffee.
+Not absurd, not formal — somewhere comfortably in between.
+
+ACCURACY:
+- Every fact must be verifiable on Wikipedia / scientific sources
+- If unsure of specifics, pick a different topic — do not guess
+- Humor comes from the framing or wording, NOT from exaggerating facts
+
+TONE:
+- Light, breezy, mildly playful — NEVER over-the-top
+- NO reaction interjections (no "เว๋ย / อ๋าว / โอ้โห / บ้าเลย / ตาย / OMG / BRO / NO WAY")
+- NO Gen Z brain-rot phrases. NO repeated characters (อ๊าาา, ว้าาาว)
+- OK: gentle conversational Thai (เนอะ, นะ, น่ะ, เลย) — sparingly, not every sentence
+- OK: a soft witty observation at the end ("...ก็แปลกดีนะ", "...ลองคิดดูสิ")
+- Sentences flow as continuous narration, NOT shouty alternating
+
+STRUCTURE (8-10 sentences):
+1. Open with the surprising fact, stated plainly
+2. Build context: who/where/when/how
+3. Add 2-3 supporting details
+4. Close with a light observation or "did-you-know" framing
+
+Rules:
+- Each sentence normal length (8-15 words). Not staccato single-word lines.
+- Thai = natural spoken Thai. EN = casual conversational English.
+- text_en and text_th convey the same point, reimagined for each language."""
 
 SYSTEM_PROMPT_NARRATIVE = """You are a Thai narrated documentary scriptwriter.
 Style: calm, deep, thought-provoking — like NatGeo narration meets Thai philosophical wisdom.
+
+ACCURACY RULES (non-negotiable):
+- Any factual claim about animals, biology, psychology, history must be verifiable
+- If citing behavior or biology, it must be a real documented phenomenon
+- Metaphors are fine; FABRICATED facts dressed as truth are not
+- If unsure, pick a different angle — never invent
 
 Rules:
 - Write as if you are observing something quietly, not teaching
@@ -96,6 +128,38 @@ def _call_groq(messages: list, max_tokens: int = 600) -> str:
     record("groq")
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+def _call_gemini(messages: list, max_tokens: int = 1200) -> str:
+    """Gemini 2.5 Flash with JSON output. Stronger factual accuracy than llama-3.3."""
+    system = next((m["content"] for m in messages if m["role"] == "system"), "")
+    user   = next((m["content"] for m in messages if m["role"] == "user"),   "")
+
+    resp = _GEMINI_CLIENT.models.generate_content(
+        model="gemini-2.5-flash-lite",
+        contents=user,
+        config=genai_types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=0.85,
+            max_output_tokens=max_tokens,
+            response_mime_type="application/json",
+        ),
+    )
+    record("gemini")
+    text = (resp.text or "").strip()
+    if not text:
+        raise RuntimeError("Gemini returned empty response")
+    return text
+
+
+def _llm_call(messages: list, max_tokens: int = 1200) -> str:
+    """Try Gemini first, fall back to Groq on any failure."""
+    if _GEMINI_AVAILABLE:
+        try:
+            return _call_gemini(messages, max_tokens)
+        except Exception as e:
+            print(f"[generator] Gemini failed, fallback Groq: {e}")
+    return _call_groq(messages, max_tokens)
 
 
 _CATEGORIES = [
@@ -166,12 +230,38 @@ def generate_fact_script(topic: str = None, used_titles: list = None,
         avoid_block = "\n".join(f"- {t}" for t in used_titles[-50:])
         topic_hint += f"\n\nDo NOT use any of these already-published topics:\n{avoid_block}"
 
-    sentence_count = "8-10" if style == "chaos" else "5-6"
-    chaos_note = (
-        " For chaos style: text_en uses short punchy EN slang (OMG, NO WAY, BRO, WAIT WHAT)."
-        " text_th uses short Thai Gen Z slang (เว๋ย, อ๋าว, โอ้โห, บ้าเลย, ไม่หว๋ายแล๊ว, จริงดิ)."
-        " NO repeated characters. Max 6 words per sentence. Alternate reactions and facts." if style == "chaos" else ""
+    sentence_count = (
+        "8-10"   if style == "chaos"     else
+        "5-6"    if style == "narrative" else
+        "10-14"  # trending (Develian-style, short punchy lines)
     )
+    chaos_note = ""  # legacy reaction-injection removed (chaos now = light informative)
+
+    # Narrative scripts are abstract by design (animal metaphors, psychology) and
+    # rarely mention proper nouns. Broaden the entity definition for narrative so
+    # the Wikipedia-image overlay has something to render -- specific species,
+    # named natural locations, and named researchers/studies all resolve cleanly.
+    if style == "narrative":
+        entity_clause = (
+            "- entities: array of 2-4 lookup terms that Wikipedia would have a page for,\n"
+            "    drawn from what the script actually mentions. Accepted: specific species\n"
+            "    (use the most common English name -- 'African elephant', 'axolotl',\n"
+            "    'mycelium', 'octopus'); specific named places/ecosystems (Amazon\n"
+            "    rainforest, Sahara, Mariana Trench, Pando aspen grove); named\n"
+            "    researchers/studies if cited; named natural phenomena (aurora borealis).\n"
+            "    Each entry: {'name': str, 'sentence_idx': int (0-based)}.\n"
+            "    Max 4 entities. Prefer subjects with iconic visual identity."
+        )
+    else:
+        entity_clause = (
+            "- entities: array (can be empty) of REAL-WORLD NAMED entities mentioned in the script.\n"
+            "    Include ONLY: real people (historical or living), specific organizations (NASA, FBI),\n"
+            "    specific places/landmarks (Mount Tambora, Eiffel Tower), named events, named artworks\n"
+            "    (Mona Lisa), specific products/inventions with a proper name. Skip common nouns.\n"
+            "    Each entry: {'name': str (use the most well-known English name for Wikipedia lookup),\n"
+            "                 'sentence_idx': int (0-based index of the sentence where it appears)}\n"
+            "    If a sentence has no named entity, do not invent one. Max 5 entities per script."
+        )
 
     prompt = (
         "Generate one YouTube Shorts script using the HOOK→BUILDUP→REVEAL structure."
@@ -191,7 +281,8 @@ def generate_fact_script(topic: str = None, used_titles: list = None,
         "- hashtags_th: 8 Thai hashtags WITHOUT # (include 'shorts')\n"
         "- music_mood: ONE word — mysterious/dramatic/upbeat/melancholic/epic/peaceful/tense/inspiring\n"
         "- thumbnail_keyword: ONE Pexels photo search term\n"
-        "- thumbnail_prompt: vivid AI image prompt — cinematic, dramatic, ultra-realistic\n\n"
+        "- thumbnail_prompt: vivid AI image prompt — cinematic, dramatic, ultra-realistic\n"
+        + entity_clause + "\n\n"
         'Example: {"title_en":"Why Honey Never Expires","title_th":"ทำไมน้ำผึ้งไม่มีวันหมดอายุ",'
         '"sentences":['
         '{"text_en":"Honey found in ancient Egyptian tombs is still edible after 3000 years.","text_th":"น้ำผึ้งที่พบในสุสานอียิปต์โบราณยังกินได้แม้ผ่านมา 3000 ปี","keyword":"ancient egypt tomb artifact closeup","fallback":"ancient egypt"},'
@@ -206,10 +297,10 @@ def generate_fact_script(topic: str = None, used_titles: list = None,
         # Keep only Thai chars + spaces + basic punctuation
         return _re.sub(r'[^฀-๿\s\d\.,!?\'\"\-\(\)]', '', text).strip()
 
-    raw = _call_groq([
+    raw = _llm_call([
         {"role": "system", "content": system},
         {"role": "user", "content": prompt},
-    ], max_tokens=1200)
+    ], max_tokens=3000)
 
     if raw.startswith("```"):
         raw = raw.split("```")[1]

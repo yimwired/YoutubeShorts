@@ -26,7 +26,8 @@ from src.music import get_track
 from src.notion_logger import log_scheduled, mark_uploaded
 from src.uploader import upload_youtube, upload_tiktok
 from src.topic_history import load_history, save_topic
-from main import _make_th_subs, make_video
+from src.entity_images import fetch_entity_image
+from main import _make_th_subs, make_video, _silence_boundaries
 
 OUTPUT_DIR = "output"
 QUEUE_DIR  = "queue"
@@ -38,37 +39,118 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(QUEUE_DIR, exist_ok=True)
 
 
-def _count_queued_pairs() -> int:
-    """Count pairs whose publishAt is still in the future (not yet live)."""
-    now   = datetime.now(BKK)
-    files = glob.glob(os.path.join(QUEUE_DIR, "job_*.json"))
-    timestamps = set()
-    for f in files:
+def _used_publish_slots() -> set[str]:
+    """ISO strings of publish_at already present in queue (any status).
+
+    Slot allocation diffs against this set so each future slot gets exactly
+    one pair. Prevents two bugs the count-based predecessor suffered:
+      - duplicate (two pairs racing for the same slot if batches ran twice
+        in a day with the marker cleared)
+      - silent skip (a count of 11 across non-contiguous slots advanced the
+        offset past gaps like 24/8 + 24/12, leaving them empty forever)
+    """
+    used = set()
+    for f in glob.glob(os.path.join(QUEUE_DIR, "job_*.json")):
         try:
             with open(f, encoding="utf-8") as fp:
                 job = json.load(fp)
-            pub = job.get("publish_at", "")
-            if pub and datetime.fromisoformat(pub) > now:
-                timestamps.add(os.path.basename(f).split("_")[1])
+            pub = job.get("publish_at")
+            if pub:
+                used.add(pub)
         except Exception:
             pass
-    return len(timestamps)
+    return used
 
 
-def _future_slots(start_offset: int, n: int) -> list[str]:
-    """Return n future publish-time ISO strings starting after start_offset slots."""
+def _future_slots(used: set[str], n: int) -> list[str]:
+    """Return next n future publish-time ISO strings not already in `used`."""
     now   = datetime.now(BKK)
     slots = []
     day   = 0
-    while len(slots) < start_offset + n:
+    while len(slots) < n and day < 30:
         for h in POST_HOURS:
             t = now.replace(hour=h, minute=0, second=0, microsecond=0) + timedelta(days=day)
-            if t > now:
-                slots.append(t.isoformat())
-                if len(slots) == start_offset + n:
+            iso = t.isoformat()
+            if t > now and iso not in used:
+                slots.append(iso)
+                if len(slots) == n:
                     break
         day += 1
-    return slots[start_offset:]
+    return slots
+
+
+def _build_entity_overlays(data: dict, timestamp: int,
+                           audio_en: str, audio_th: str,
+                           th_boundaries: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Download images for `data['entities']` and compute per-sentence
+    overlay windows for EN + TH. Returns (en_overlays, th_overlays).
+
+    Each overlay = {"image_path", "start", "end"}. Sentences without a
+    downloadable image are silently skipped.
+    """
+    entities = data.get("entities") or []
+    sentences = data.get("sentences") or []
+    if not entities or not sentences:
+        return [], []
+
+    # TH per-sentence timing comes from edge-tts boundary tracking (ground truth).
+    # EN single-call TTS has no boundary stream, so detect inter-sentence pauses
+    # in the rendered audio via ffmpeg silencedetect. Falls back to even split if
+    # pauses are too few (rare — Ana/Aria speech has clean ~0.3s gaps).
+    try:
+        import subprocess
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", audio_en],
+            capture_output=True, text=True
+        )
+        en_dur = float(r.stdout.strip() or 30.0)
+    except Exception:
+        en_dur = 30.0
+
+    n_sent = max(len(sentences), 1)
+    en_bounds = _silence_boundaries(audio_en, n_sent) or []
+    if len(en_bounds) != n_sent:
+        # Fallback: even split across audio duration
+        per = en_dur / n_sent
+        en_bounds = [{"start": i * per, "end": (i + 1) * per} for i in range(n_sent)]
+        print(f"  [entity] EN silence detect → fallback even-split ({n_sent} sentences)")
+    else:
+        print(f"  [entity] EN silence boundaries OK ({n_sent} sentences)")
+
+    img_dir = os.path.join(OUTPUT_DIR, "entities", str(timestamp))
+    os.makedirs(img_dir, exist_ok=True)
+
+    en_out, th_out = [], []
+    for i, ent in enumerate(entities[:5]):
+        name = (ent.get("name") or "").strip()
+        idx  = ent.get("sentence_idx")
+        if not name or idx is None or idx < 0 or idx >= len(sentences):
+            continue
+
+        img_path = os.path.join(img_dir, f"ent_{i}_{name[:30].replace(' ', '_')}.jpg")
+        got = fetch_entity_image(name, img_path, lang_hint="en")
+        if not got:
+            print(f"  [entity] no image for '{name}' — skip")
+            continue
+        print(f"  [entity] '{name}' → {os.path.basename(img_path)} @ sent {idx}")
+
+        # EN window: real sentence boundary from silencedetect
+        eb = en_bounds[idx]
+        en_out.append({"image_path": img_path,
+                       "start": round(float(eb["start"]) + 0.05, 3),
+                       "end":   round(min(float(eb["end"]) + 0.4, en_dur - 0.1), 3)})
+
+        # TH window: use edge-tts boundary if available
+        if idx < len(th_boundaries):
+            b = th_boundaries[idx]
+            th_out.append({"image_path": img_path,
+                           "start": float(b["start"]) + 0.05,
+                           "end":   float(b["end"])   + 0.4})
+        else:
+            th_out.append(en_out[-1].copy())
+
+    return en_out, th_out
 
 
 def generate_one_pair(index: int, publish_at: str) -> None:
@@ -94,8 +176,8 @@ def generate_one_pair(index: int, publish_at: str) -> None:
     print(f"  EN: {title_en}")
     print(f"  TH: {title_th}")
 
-    # trending: 5 clips (variety) — not per-sentence
-    kw_for_clips = keywords[:5] if style == "trending" else keywords
+    # trending: 7 clips (Develian-style fast cuts) — not per-sentence
+    kw_for_clips = keywords[:7] if style == "trending" else keywords
     clips = fetch_multiple_clips(kw_for_clips, OUTPUT_DIR)
     if not clips:
         print("  ERROR: No footage — skipping")
@@ -144,10 +226,18 @@ def generate_one_pair(index: int, publish_at: str) -> None:
     else:
         thumb_en_b = thumb_th_b = None
 
+    # Entity image overlays — fetch CC-licensed photos of named people/places
+    # mentioned in the script and overlay them while their sentence is spoken.
+    en_overlays, th_overlays = _build_entity_overlays(
+        data, timestamp, audio_en, audio_th, th_boundaries
+    )
+
     final_en = make_video(clips, audio_en, title_en, en_words, timestamp, "en", music,
-                          thumb_path=thumb_en, content_style=style)
+                          thumb_path=thumb_en, content_style=style,
+                          entity_overlays=en_overlays)
     final_th = make_video(clips, audio_th, title_en, th_words, timestamp, "th", music,
-                          thumb_path=thumb_th, content_style=style)
+                          thumb_path=thumb_th, content_style=style,
+                          entity_overlays=th_overlays)
 
     desc_en     = data.get("description", script_en)
     desc_th     = data.get("description_th", script_th)
@@ -253,15 +343,24 @@ if __name__ == "__main__":
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     print(f"[Batch] Generating {n} pair(s)...")
 
-    existing = _count_queued_pairs()
-    slots    = _future_slots(existing, n)
-    print(f"  Existing queue: {existing} pair(s)")
+    used  = _used_publish_slots()
+    slots = _future_slots(used, n)
+    print(f"  Existing queue slots: {len(used)}")
     print(f"  Planned slots : {[s[:16] for s in slots]}")
 
+    n_ok = 0
     for i, slot in enumerate(slots):
         try:
             generate_one_pair(i, slot)
+            n_ok += 1
         except Exception as e:
             print(f"  [Batch] Pair {i+1} failed: {e}")
 
-    print(f"\n[Batch] Done — {n} pair(s) queued")
+    print(f"\n[Batch] Done — {n_ok}/{len(slots)} pair(s) queued")
+
+    # Exit non-zero when nothing succeeded so run_batch.ps1 does NOT write the
+    # daily-once marker -- a later trigger (12:00 / 18:00) then retries today
+    # instead of skipping. A transient edge-tts outage that kills every pair
+    # therefore self-heals on the next fire.
+    if slots and n_ok == 0:
+        sys.exit(1)
