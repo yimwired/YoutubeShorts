@@ -4,17 +4,14 @@ token_youtube.json
 token_tiktok.json
 client_secrets.json
 
-# Video output (large files)
-output/
+# Video output (large files) -- but keep A/B candidate thumbnails:
+# swap_thumbnails.py runs on GitHub Actions days after generation and
+# needs thumb_*_b.jpg present in the repo (prune_thumbs.py bounds growth).
+output/*
+!output/thumb_*_b.jpg
 *.mp4
 *.mp3
 *.wav
-
-# Queue state (regenerated each run)
-queue/
-
-# Round-robin bucket index per slot style
-bucket_state.json
 
 # Python
 __pycache__/

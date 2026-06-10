@@ -129,7 +129,9 @@ def process_job(job_path: str, yt, median_views: int | None) -> None:
     active_variant = "B" if job.get("ab_swapped") else "A"
 
     already_swapped = bool(job.get("ab_swapped"))
-    thumb_b = job.get("thumb_path_b")
+    # Jobs generated on Windows store backslash paths -- normalize so
+    # the existence check also works on Linux (GitHub Actions runner).
+    thumb_b = (job.get("thumb_path_b") or "").replace("\\", "/")
 
     if (not already_swapped
             and thumb_b

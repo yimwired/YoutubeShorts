@@ -1,11 +1,13 @@
 name: Daily Video Generation
 
 on:
-  # Cron disabled — local Task Scheduler is now the primary runner because
-  # TikTok cookie-based upload (Selenium) requires a GUI which GH runners
-  # don't have. Re-enable cron when the official TikTok API is approved.
-  # schedule:
-  #   - cron: '0 23 * * *'   # 06:00 Bangkok (UTC+7)
+  # Primary runner since 2026-06-10 (full-cloud migration). The TikTok
+  # blocker that forced a local runner is gone: cookie-based upload broke
+  # with TikTok's 2026-05 UI change and is disabled in generate_batch.py
+  # anyway, so the cloud runner uploads exactly what the local one did
+  # (YouTube only). Local FactSnapBatch task is disabled.
+  schedule:
+    - cron: '0 23 * * *'   # 06:00 Bangkok (UTC+7)
   workflow_dispatch:        # manual trigger from GitHub UI
 
 jobs:
@@ -49,6 +51,7 @@ jobs:
 
       - name: Generate & upload videos
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -60,10 +63,18 @@ jobs:
           NOTION_VIDEO_LOG_DB_ID: ${{ secrets.NOTION_VIDEO_LOG_DB_ID }}
         run: python generate_batch.py 3
 
-      - name: Commit updated topic history
+      # Queue jobs + B thumbnails must land in the repo: the swap workflow
+      # (swap.yml, 02:00 Bangkok) runs on a fresh runner days later and reads
+      # them from the checkout. Same for topic/rate/bucket state — without
+      # committing these, every cloud run would start from a blank slate and
+      # repeat topics/slots.
+      - name: Commit state (queue, thumbs, topic/rate/bucket)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add topic_history.json
-          git diff --staged --quiet || git commit -m "chore: update topic history [skip ci]"
+          git add -A queue/ output/
+          git add topic_history.json rate_usage.json
+          if [ -f bucket_state.json ]; then git add bucket_state.json; fi
+          git diff --staged --quiet || git commit -m "chore: update pipeline state [skip ci]"
+          git pull --rebase origin main
           git push

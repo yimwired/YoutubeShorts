@@ -19,13 +19,16 @@ Automated YouTube Shorts pipeline — generate fact/script + footage + voice + s
 ```
 generate_batch.py  → queue/job_<ts>_<lang>.json + output/short_<ts>_<lang>.mp4
                      (1 pair = EN + TH version, แต่ละ slot)
-                     ↓
-scheduler.py        → polls queue/, uploads at publish_at time
-                      Run as long-lived background process
-                      Auto-catches missed slots on startup
+                     upload YouTube ทันที + ตั้ง publish_at ฝั่ง YouTube server
 ```
 
-GitHub Actions (`.github/workflows/daily.yml`) cron `0 23 * * *` UTC = 06:00 Bangkok — generate batch ก่อน slot 08:00 มาถึง.
+`scheduler.py` = legacy, ไม่ต้องรันแล้ว — generate_batch upload เองจบในรอบเดียว.
+
+**Full-cloud ตั้งแต่ 2026-06-10** — GitHub Actions เป็น primary runner, ไม่ต้องเปิดคอม:
+- `daily.yml` cron `0 23 * * *` UTC = 06:00 Bangkok — generate + upload, แล้ว commit state กลับ repo (`queue/`, `output/thumb_*_b.jpg`, `topic_history.json`, `rate_usage.json`, `bucket_state.json`)
+- `swap.yml` cron `0 19 * * *` UTC = 02:00 Bangkok — thumbnail A/B swap + analytics→Notion + prune thumb เก่า (`prune_thumbs.py`)
+- Local Task Scheduler (`FactSnapBatch`, `FactSnapSwap`) ถูก disable แล้ว — ถ้าจะรัน batch local ต้อง `git pull` ก่อน (state อยู่ใน repo) และ re-enable task ไม่ได้ถ้า GH cron ยังเปิด (จะรันซ้ำซ้อน)
+- ข้อจำกัด cloud: ไม่มี `music/` (143MB, ไม่ commit เพราะ repo public) → BGM fallback SoundHelix; font EN = DejaVu Bold แทน Impact (ดู `FONT_EN` ใน editor.py)
 
 ## Pipeline (per video)
 

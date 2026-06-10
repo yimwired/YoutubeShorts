@@ -1,0 +1,57 @@
+name: Thumbnail A/B Swap + Analytics
+
+# Cloud replacement for the local FactSnapSwap task (disabled 2026-06-10).
+# Reads queue/job_*.json + output/thumb_*_b.jpg from the repo (committed by
+# daily.yml), swaps underperforming thumbnails to variant B, pushes analytics
+# to Notion, then prunes thumbnails whose swap window has passed.
+
+on:
+  schedule:
+    - cron: '0 19 * * *'   # 02:00 Bangkok (UTC+7)
+  workflow_dispatch:
+
+jobs:
+  swap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # swap_thumbnails.py only touches the YouTube/Notion APIs — skip the
+      # heavy video stack in requirements.txt (whisper/torch/moviepy).
+      - name: Install dependencies
+        run: pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2 requests
+
+      - name: Write YouTube credential file
+        env:
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+        run: printf '%s' "$YOUTUBE_TOKEN" > token_youtube.json
+
+      - name: Swap thumbnails + push analytics to Notion
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_VIDEO_LOG_DB_ID: ${{ secrets.NOTION_VIDEO_LOG_DB_ID }}
+        run: python swap_thumbnails.py
+
+      - name: Prune expired B thumbnails
+        run: python prune_thumbs.py
+
+      - name: Commit updated jobs + pruned thumbs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A queue/ output/
+          git diff --staged --quiet || git commit -m "chore: A/B swap + analytics state [skip ci]"
+          git pull --rebase origin main
+          git push
