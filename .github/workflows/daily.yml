@@ -45,9 +45,11 @@ jobs:
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
           YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
+        # sed strips a UTF-8 BOM in case a secret was ever set via a
+        # PowerShell pipe (which prepends one) — json.load rejects BOMs.
         run: |
-          printf '%s' "$YOUTUBE_TOKEN" > token_youtube.json
-          printf '%s' "$YOUTUBE_CLIENT_SECRETS" > client_secrets.json
+          printf '%s' "$YOUTUBE_TOKEN" | sed '1s/^\xef\xbb\xbf//' > token_youtube.json
+          printf '%s' "$YOUTUBE_CLIENT_SECRETS" | sed '1s/^\xef\xbb\xbf//' > client_secrets.json
 
       - name: Generate & upload videos
         env:

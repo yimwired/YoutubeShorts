@@ -10,6 +10,15 @@
 #
 # Logs: G:\YoutubeShorts\run_batch.log (rotated when over ~5MB)
 
+# ===== DISABLED 2026-06-10: full-cloud migration =====
+# GitHub Actions (daily.yml, 06:00 Bangkok cron) is the primary runner now.
+# This kill-switch exists because disabling the scheduled task needs admin.
+# To go back to local runs: delete this block AND disable the GH cron first,
+# then git pull (pipeline state now lives in the repo).
+Add-Content -Path "G:\YoutubeShorts\run_batch.log" -Value ("[{0}] skip -- disabled, GH Actions is primary (full-cloud)" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss")) -ErrorAction SilentlyContinue
+exit 0
+# ======================================================
+
 $ErrorActionPreference = "Continue"
 Set-Location "G:\YoutubeShorts"
 

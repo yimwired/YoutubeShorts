@@ -33,10 +33,12 @@ jobs:
       - name: Install dependencies
         run: pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2 requests
 
+      # sed strips a UTF-8 BOM in case the secret was ever set via a
+      # PowerShell pipe (which prepends one) — json.load rejects BOMs.
       - name: Write YouTube credential file
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
-        run: printf '%s' "$YOUTUBE_TOKEN" > token_youtube.json
+        run: printf '%s' "$YOUTUBE_TOKEN" | sed '1s/^\xef\xbb\xbf//' > token_youtube.json
 
       - name: Swap thumbnails + push analytics to Notion
         env:

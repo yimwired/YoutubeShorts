@@ -2,6 +2,13 @@
 # Invoked by Task Scheduler "FactSnapSwap" at 02:00.
 # Log: G:\YoutubeShorts\run_swap.log (rotated when over ~5MB)
 
+# ===== DISABLED 2026-06-10: full-cloud migration =====
+# GitHub Actions (swap.yml, 02:00 Bangkok cron) runs the A/B swap now.
+# Kill-switch because disabling the scheduled task needs admin.
+Add-Content -Path "G:\YoutubeShorts\run_swap.log" -Value ("[{0}] skip -- disabled, GH Actions is primary (full-cloud)" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss")) -ErrorAction SilentlyContinue
+exit 0
+# ======================================================
+
 $ErrorActionPreference = "Continue"
 Set-Location "G:\YoutubeShorts"
 
