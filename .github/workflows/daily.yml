@@ -19,12 +19,12 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -46,7 +46,7 @@ jobs:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
           YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
         # sed strips a UTF-8 BOM in case a secret was ever set via a
-        # PowerShell pipe (which prepends one) — json.load rejects BOMs.
+        # PowerShell pipe (which prepends one) -- json.load rejects BOMs.
         run: |
           printf '%s' "$YOUTUBE_TOKEN" | sed '1s/^\xef\xbb\xbf//' > token_youtube.json
           printf '%s' "$YOUTUBE_CLIENT_SECRETS" | sed '1s/^\xef\xbb\xbf//' > client_secrets.json
@@ -67,7 +67,7 @@ jobs:
 
       # Queue jobs + B thumbnails must land in the repo: the swap workflow
       # (swap.yml, 02:00 Bangkok) runs on a fresh runner days later and reads
-      # them from the checkout. Same for topic/rate/bucket state — without
+      # them from the checkout. Same for topic/rate/bucket state -- without
       # committing these, every cloud run would start from a blank slate and
       # repeat topics/slots.
       - name: Commit state (queue, thumbs, topic/rate/bucket)

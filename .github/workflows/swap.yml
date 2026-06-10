@@ -19,22 +19,22 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
-      # swap_thumbnails.py only touches the YouTube/Notion APIs — skip the
+      # swap_thumbnails.py only touches the YouTube/Notion APIs -- skip the
       # heavy video stack in requirements.txt (whisper/torch/moviepy).
       - name: Install dependencies
         run: pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2 requests
 
       # sed strips a UTF-8 BOM in case the secret was ever set via a
-      # PowerShell pipe (which prepends one) — json.load rejects BOMs.
+      # PowerShell pipe (which prepends one) -- json.load rejects BOMs.
       - name: Write YouTube credential file
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
