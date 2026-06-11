@@ -137,7 +137,8 @@ def main():
                       if not c["we_replied"]
                       and c["comment_id"] not in already
                       and c["like_count"] >= args.min_likes
-                      and not (our_cid and c["author_channel_id"] == our_cid)]
+                      and not (our_cid and c["author_channel_id"] == our_cid)
+                      and len(c["text"].strip()) >= 3]  # skip gibberish like a lone char
         if not candidates:
             continue
 

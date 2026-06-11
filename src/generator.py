@@ -130,8 +130,10 @@ def _call_groq(messages: list, max_tokens: int = 600) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-def _call_gemini(messages: list, max_tokens: int = 1200) -> str:
-    """Gemini 2.5 Flash with JSON output. Stronger factual accuracy than llama-3.3."""
+def _call_gemini(messages: list, max_tokens: int = 1200,
+                 json_mode: bool = True) -> str:
+    """Gemini 2.5 Flash. JSON output by default (script generation);
+    json_mode=False returns plain text (e.g. comment replies)."""
     system = next((m["content"] for m in messages if m["role"] == "system"), "")
     user   = next((m["content"] for m in messages if m["role"] == "user"),   "")
 
@@ -142,7 +144,7 @@ def _call_gemini(messages: list, max_tokens: int = 1200) -> str:
             system_instruction=system,
             temperature=0.85,
             max_output_tokens=max_tokens,
-            response_mime_type="application/json",
+            response_mime_type="application/json" if json_mode else "text/plain",
         ),
     )
     record("gemini")
@@ -152,11 +154,12 @@ def _call_gemini(messages: list, max_tokens: int = 1200) -> str:
     return text
 
 
-def _llm_call(messages: list, max_tokens: int = 1200) -> str:
+def _llm_call(messages: list, max_tokens: int = 1200,
+              json_mode: bool = True) -> str:
     """Try Gemini first, fall back to Groq on any failure."""
     if _GEMINI_AVAILABLE:
         try:
-            return _call_gemini(messages, max_tokens)
+            return _call_gemini(messages, max_tokens, json_mode=json_mode)
         except Exception as e:
             print(f"[generator] Gemini failed, fallback Groq: {e}")
     return _call_groq(messages, max_tokens)

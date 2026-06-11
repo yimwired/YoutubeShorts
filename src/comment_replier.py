@@ -10,6 +10,7 @@ Scope note: posting comments via the YouTube Data API requires the
 needs to re-authenticate with the expanded scope (see SCOPES below).
 """
 
+import json
 import os
 import re
 from googleapiclient.discovery import build
@@ -161,9 +162,26 @@ def generate_reply(comment_text: str, video_title: str,
         [{"role": "system", "content": system},
          {"role": "user",   "content": user}],
         max_tokens=200,
+        json_mode=False,
     )
-    # Strip surrounding quotes if the model added any
-    return raw.strip().strip('"').strip("'")
+    return _clean_reply(raw)
+
+
+def _clean_reply(raw: str) -> str:
+    """Normalize LLM output to plain reply text. Defends against the model
+    wrapping the reply in a JSON object or markdown code fences."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-z]*\s*|\s*```$", "", text).strip()
+    if text.startswith("{"):
+        try:
+            obj = json.loads(text)
+            if isinstance(obj, dict):
+                text = next((v for v in obj.values()
+                             if isinstance(v, str) and v.strip()), text)
+        except json.JSONDecodeError:
+            pass
+    return text.strip().strip('"').strip("'")
 
 
 def post_reply(youtube, parent_comment_id: str, text: str) -> str | None:
