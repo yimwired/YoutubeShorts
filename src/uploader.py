@@ -9,6 +9,7 @@ from google.oauth2.credentials import Credentials
 
 SCOPES           = ["https://www.googleapis.com/auth/youtube.upload",
                     "https://www.googleapis.com/auth/youtube",
+                    "https://www.googleapis.com/auth/youtube.force-ssl",
                     "https://www.googleapis.com/auth/yt-analytics.readonly"]
 TOKEN_FILE       = "token_youtube.json"
 SECRETS_FILE     = "client_secrets.json"
