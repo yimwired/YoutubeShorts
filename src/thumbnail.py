@@ -37,6 +37,7 @@ def _fetch_pollinations(prompt: str, output_path: str,
     so the original single-thumb path stays deterministic."""
     import urllib.parse
     p = (f"{prompt}, cinematic photography, dramatic lighting, "
+         f"high contrast, vivid saturated colors, eye-catching, "
          f"photorealistic, sharp focus, 9:16 vertical format")
     s = seed if seed is not None else (hash(prompt) % 99999)
     url = (f"https://image.pollinations.ai/prompt/{urllib.parse.quote(p)}"
@@ -161,7 +162,9 @@ def create_thumbnail(video_path: str, title: str, output_path: str,
                      photo_keyword: str = None,
                      ai_prompt: str = None,
                      clips: list = None,
-                     seed: int | None = None) -> str:
+                     seed: int | None = None,
+                     series_tag: str = None,
+                     episode: int | None = None) -> str:
 
     # ── Background priority: Pollinations AI → clip frame → Pexels → video frame → dark ──
     bg_path = output_path.replace(".jpg", "_bg.jpg")
@@ -200,6 +203,23 @@ def create_thumbnail(video_path: str, title: str, output_path: str,
     os.remove(bg_path)
 
     base = _build_base(img, title)   # RGBA
+
+    # ── Series badge (top-right) — signals an ongoing series so binge
+    #    watchers and returning subscribers recognize the format. ─────
+    if series_tag and episode:
+        draw = ImageDraw.Draw(base)
+        sf   = ImageFont.truetype(FONT_BOLD, 40)
+        txt  = f"{series_tag} #{episode}"
+        tw   = int(draw.textlength(txt, font=sf))
+        pad  = 18
+        # Sits in the top strip (y 10..68), clear of the centered hook
+        # badge which starts at y=70.
+        rx1, ry0 = W - 24, 10
+        rx0, ry1 = rx1 - tw - 2 * pad, ry0 + 58
+        draw.rounded_rectangle([(rx0, ry0), (rx1, ry1)],
+                                radius=14, fill=(20, 20, 20, 220))
+        draw.text(((rx0 + rx1) // 2, (ry0 + ry1) // 2), txt, font=sf,
+                  fill="#FFE000", anchor="mm", stroke_width=2, stroke_fill="black")
 
     # ── THAI Ver badge (center, prominent) ──────────────────────────
     if thai_ver:

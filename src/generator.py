@@ -269,10 +269,19 @@ def generate_fact_script(topic: str = None, used_titles: list = None,
     prompt = (
         "Generate one YouTube Shorts script using the HOOK→BUILDUP→REVEAL structure."
         + topic_hint +
-        " Pick a genuinely surprising or little-known fact.\n\n"
+        " Pick a genuinely surprising or little-known fact.\n"
+        " RETENTION LOOP: hook_en must tease something the viewer does NOT yet know. "
+        "Withhold ONE concrete detail it teases and reveal that detail ONLY in the final sentence, "
+        "so a rewatch pays off and the ending loops back to the opening question.\n\n"
         "Return ONLY a valid JSON object with these keys:\n\n"
         "- title_en: curiosity-gap English title (max 60 chars)\n"
         "- title_th: Thai title — natural spoken Thai, NOT word-for-word translation (max 50 chars, Thai chars only)\n"
+        "- hook_en: 2-5 word ON-SCREEN hook for the first 2 seconds — the SPECIFIC curiosity gap of THIS fact, present tense + active verb. NEVER generic like 'DID YOU KNOW'. Max 18 chars. e.g. 'HONEY NEVER ROTS'\n"
+        "- hook_th: same idea, punchy spoken Thai, max 16 Thai chars (Thai chars only)\n"
+        "- loop_en: 2-6 word closing line shown at the very end that makes the viewer want to REWATCH from the start (callback to the hook's open question). e.g. 'NOW WATCH THE START'\n"
+        "- loop_th: same idea in spoken Thai (Thai chars only)\n"
+        "- cta_en: a 3-6 word comment-bait QUESTION for the end card + seed comment. e.g. 'Would you eat it?'\n"
+        "- cta_th: same question in spoken Thai (Thai chars only)\n"
         f"- sentences: array of EXACTLY {sentence_count} objects, one per sentence of the script.{chaos_note} Each object:\n"
         "  'text_en': one English sentence\n"
         "  'text_th': Thai translation of that sentence (natural spoken Thai, Thai chars only)\n"
@@ -284,9 +293,15 @@ def generate_fact_script(topic: str = None, used_titles: list = None,
         "- hashtags_th: 8 Thai hashtags WITHOUT # (include 'shorts')\n"
         "- music_mood: ONE word — mysterious/dramatic/upbeat/melancholic/epic/peaceful/tense/inspiring\n"
         "- thumbnail_keyword: ONE Pexels photo search term\n"
-        "- thumbnail_prompt: vivid AI image prompt — cinematic, dramatic, ultra-realistic\n"
+        "- thumbnail_prompt: vivid AI image prompt — cinematic, dramatic, ultra-realistic. "
+        "When the fact involves a person or animal, make the SUBJECT FILL THE FRAME with a strong "
+        "emotional facial expression (shock, awe, fear) facing the camera — expressive faces lift CTR. "
+        "Otherwise: one bold high-contrast hero subject, no clutter.\n"
         + entity_clause + "\n\n"
         'Example: {"title_en":"Why Honey Never Expires","title_th":"ทำไมน้ำผึ้งไม่มีวันหมดอายุ",'
+        '"hook_en":"HONEY NEVER ROTS","hook_th":"น้ำผึ้งไม่มีวันเสีย",'
+        '"loop_en":"NOW WATCH THE START","loop_th":"ย้อนดูตอนต้นสิ",'
+        '"cta_en":"Would you eat it?","cta_th":"กล้ากินไหม?",'
         '"sentences":['
         '{"text_en":"Honey found in ancient Egyptian tombs is still edible after 3000 years.","text_th":"น้ำผึ้งที่พบในสุสานอียิปต์โบราณยังกินได้แม้ผ่านมา 3000 ปี","keyword":"ancient egypt tomb artifact closeup","fallback":"ancient egypt"},'
         '{"text_en":"Scientists tasted it. It was perfect.","text_th":"นักวิทยาศาสตร์ชิมดู มันยังสมบูรณ์แบบ","keyword":"scientist lab tasting sample microscope","fallback":"scientist lab"}'
@@ -331,6 +346,10 @@ def generate_fact_script(topic: str = None, used_titles: list = None,
     # Strip CJK hallucinations from Thai fields
     data["title_th"]  = _clean_thai(data.get("title_th", ""))
     data["script_th"] = _clean_thai(data.get("script_th", ""))
+    for k in ("hook_th", "loop_th", "cta_th"):
+        if data.get(k):
+            data[k] = _clean_thai(data[k])
     for s in data.get("sentences", []):
         s["text_th"] = _clean_thai(s.get("text_th", ""))
+    data["category"] = category  # for series numbering downstream
     return data

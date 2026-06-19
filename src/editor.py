@@ -291,18 +291,32 @@ def append_outro_card(video_path: str, lang: str = "en",
     return video_path
 
 
-def _hook_overlay(style: str, lang: str) -> str:
+_HOOK_COLORS = {"trending": "#FFE000", "chaos": "#FF2EA0", "narrative": "#00E0FF"}
+
+
+def _hook_size(text: str) -> int:
+    """Pick a fontsize that keeps the hook on one line at 1080 wide."""
+    n = len(text)
+    return 132 if n <= 12 else 108 if n <= 18 else 88 if n <= 26 else 72
+
+
+def _hook_overlay(style: str, lang: str, text: str = None) -> str:
     """Return a single ffmpeg drawtext filter that shows a big retention
     hook line during the first 2 seconds. Fades in/out and bounces a few
     pixels so the eye locks on. Sits above the subtitle band so it never
-    fights captions."""
-    HOOKS = {
-        "trending":  {"en": "DID YOU KNOW?",  "th": "รู้หรือเปล่า?", "color": "#FFE000"},
-        "chaos":     {"en": "WAIT FOR IT...", "th": "ห้ามพลาด",     "color": "#FF2EA0"},
-        "narrative": {"en": "TRUE STORY",     "th": "เรื่องจริง",  "color": "#00E0FF"},
+    fights captions. `text` is the fact-specific hook from the generator;
+    falls back to a generic line per style if absent."""
+    FALLBACK = {
+        "trending":  {"en": "DID YOU KNOW?",  "th": "รู้หรือเปล่า?"},
+        "chaos":     {"en": "WAIT FOR IT...", "th": "ห้ามพลาด"},
+        "narrative": {"en": "TRUE STORY",     "th": "เรื่องจริง"},
     }
-    h    = HOOKS.get(style, HOOKS["trending"])
-    text = h["en"] if lang == "en" else h["th"]
+    color = _HOOK_COLORS.get(style, _HOOK_COLORS["trending"])
+    if text and text.strip():
+        disp = text.strip().upper() if lang == "en" else text.strip()
+    else:
+        fb   = FALLBACK.get(style, FALLBACK["trending"])
+        disp = fb["en"] if lang == "en" else fb["th"]
     font = FONT_EN if lang == "en" else FONT_TH
     # Fade-in 0.25s, hold to 1.6s, fade-out to 2.0s.
     alpha = ("if(lt(t,0.25),t/0.25,"
@@ -311,13 +325,66 @@ def _hook_overlay(style: str, lang: str) -> str:
     # Subtle bounce -- amplitude ~8px around y = 18% of height.
     y_expr = "h*0.18+sin(t*9)*8"
     return (
-        f"drawtext=fontfile='{font}':text='{_escape(text)}':"
-        f"fontsize=132:fontcolor={h['color']}:"
+        f"drawtext=fontfile='{font}':text='{_escape(disp)}':"
+        f"fontsize={_hook_size(disp)}:fontcolor={color}:"
         f"borderw=6:bordercolor=black:"
         f"x=(w-text_w)/2:y={y_expr}:"
         f"alpha='{alpha}':"
         f"enable='between(t\\,0\\,2.0)'"
     )
+
+
+def _endcard_overlay(style: str, lang: str, loop_text: str,
+                     cta_text: str, audio_dur: float) -> list[str]:
+    """Drawtext filters for the final ~3 seconds: a loop line that throws the
+    viewer back to the start (boosts replay rate) plus a comment-bait CTA
+    question. Both fade in/out together. Returns a list (possibly empty)."""
+    parts = []
+    if audio_dur < 4:
+        return parts
+    color = _HOOK_COLORS.get(style, _HOOK_COLORS["trending"])
+    font  = FONT_EN if lang == "en" else FONT_TH
+    t0 = round(audio_dur - 3.0, 2)
+    t1 = round(audio_dur - 0.3, 2)
+    fb = round(t0 + 0.3, 2)   # fade-in done
+    fc = round(t1 - 0.4, 2)   # fade-out start
+    alpha = (f"if(lt(t,{t0}),0,"
+             f"if(lt(t,{fb}),(t-{t0})/0.3,"
+             f"if(lt(t,{fc}),1,"
+             f"if(lt(t,{t1}),({t1}-t)/0.4,0))))")
+    if loop_text and loop_text.strip():
+        disp = loop_text.strip().upper() if lang == "en" else loop_text.strip()
+        size = 88 if len(disp) <= 18 else 68
+        parts.append(
+            f"drawtext=fontfile='{font}':text='{_escape(disp)}':"
+            f"fontsize={size}:fontcolor={color}:borderw=6:bordercolor=black:"
+            f"shadowcolor=black@0.7:shadowx=3:shadowy=3:"
+            f"x=(w-text_w)/2:y=h*0.30:"
+            f"alpha='{alpha}':enable='between(t\\,{t0}\\,{t1})'"
+        )
+    if cta_text and cta_text.strip():
+        disp = cta_text.strip().upper() if lang == "en" else cta_text.strip()
+        size = 64 if len(disp) <= 22 else 50
+        parts.append(
+            f"drawtext=fontfile='{font}':text='{_escape(disp)}':"
+            f"fontsize={size}:fontcolor=white:borderw=5:bordercolor=black:"
+            f"shadowcolor=black@0.7:shadowx=3:shadowy=3:"
+            f"x=(w-text_w)/2:y=h*0.78:"
+            f"alpha='{alpha}':enable='between(t\\,{t0}\\,{t1})'"
+        )
+    return parts
+
+
+def _reveal_flash(style: str, reveal_start: float) -> list[str]:
+    """A brief 0.10s half-white flash at the reveal moment — a pattern
+    interrupt that makes the eye snap back right before the payoff. Skipped
+    for narrative (would break the calm documentary mood)."""
+    if style == "narrative" or reveal_start <= 0.5:
+        return []
+    s = round(reveal_start, 2)
+    e = round(reveal_start + 0.10, 2)
+    return [f"drawbox=x=0:y=0:w=iw:h=ih:color=white@0.45:t=fill:"
+            f"enable='between(t\\,{s}\\,{e})'"]
 
 
 def create_short(video_path: str, audio_path: str, title: str, script: str,
@@ -326,7 +393,10 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
                  music_path: str = None,
                  cut_times: list[float] = None,
                  content_style: str = "trending",
-                 entity_overlays: list[dict] = None) -> str:
+                 entity_overlays: list[dict] = None,
+                 hook_text: str = None,
+                 loop_text: str = None,
+                 cta_text: str = None) -> str:
 
     audio_dur = min(_clip_duration(audio_path) + 0.5, 58.0)
 
@@ -378,7 +448,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
     # fades in/out with a subtle bounce. Style-specific copy makes the
     # first frame promise something so viewers wait past the swipe-away
     # threshold.
-    text_parts.append(_hook_overlay(content_style, lang))
+    text_parts.append(_hook_overlay(content_style, lang, hook_text))
 
     if lang == "th":
         pass  # all TH styles: ASS karaoke in pass 2 (see below)
@@ -445,6 +515,13 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
             f"shadowcolor=black@0.7:shadowx=3:shadowy=3:"
             f"x=(w-text_w)/2:y=h*0.70"
         )
+
+    # Reveal flash: pattern interrupt at the start of the final segment.
+    reveal_start = boundaries[-2] if len(boundaries) >= 2 else 0.0
+    text_parts += _reveal_flash(content_style, reveal_start)
+
+    # End card: loop line (drives replay) + comment-bait CTA, last ~3s.
+    text_parts += _endcard_overlay(content_style, lang, loop_text, cta_text, audio_dur)
 
     # Color boost + vignette → [vtxt]
     text_parts.append("eq=saturation=1.35:contrast=1.08:brightness=0.02")

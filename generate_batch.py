@@ -38,6 +38,42 @@ SLOT_STYLES = {8: "trending", 12: "chaos", 19: "narrative"}
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(QUEUE_DIR, exist_ok=True)
 
+_SERIES_STATE_FILE = "series_state.json"
+_SERIES_STOPWORDS  = {"the", "of", "that", "and", "a", "to", "in", "we", "are", "is"}
+
+
+def _series_tag(category: str) -> str:
+    """Short uppercase series label (<=12 chars) from a bucket category.
+    'deep ocean' -> 'DEEP OCEAN', 'space & universe' -> 'SPACE'."""
+    words = [w for w in category.replace("&", " ").split()
+             if w.lower() not in _SERIES_STOPWORDS]
+    tag = ""
+    for w in words:
+        nxt = (tag + " " + w).strip()
+        if len(nxt) > 12:
+            break
+        tag = nxt
+    if not tag and words:
+        tag = words[0][:12]
+    return (tag or "FACTS").upper()
+
+
+def _bump_series(category: str) -> int:
+    """Increment and return the episode counter for `category`."""
+    try:
+        with open(_SERIES_STATE_FILE, encoding="utf-8") as f:
+            state = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        state = {}
+    n = state.get(category, 0) + 1
+    state[category] = n
+    try:
+        with open(_SERIES_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
+    return n
+
 
 def _used_publish_slots() -> set[str]:
     """ISO strings of publish_at already present in queue (any status).
@@ -173,8 +209,18 @@ def generate_one_pair(index: int, publish_at: str) -> None:
     script_en = data["script_en"]
     script_th = data["script_th"]
     keywords  = data["keywords"]
+    hook_en = data.get("hook_en") or ""
+    hook_th = data.get("hook_th") or ""
+    loop_en = data.get("loop_en") or ""
+    loop_th = data.get("loop_th") or ""
+    cta_en  = data.get("cta_en")  or ""
+    cta_th  = data.get("cta_th")  or ""
+    series_cat = data.get("category") or style
+    series_tag = _series_tag(series_cat)
+    episode    = _bump_series(series_cat)
     print(f"  EN: {title_en}")
     print(f"  TH: {title_th}")
+    print(f"  Series: {series_tag} #{episode}")
 
     # trending: 7 clips (Develian-style fast cuts) — not per-sentence
     kw_for_clips = keywords[:7] if style == "trending" else keywords
@@ -212,17 +258,21 @@ def generate_one_pair(index: int, publish_at: str) -> None:
     seed_b = ((seed_a or 0) + 41337) % 99999 if ai_prompt else None
     create_thumbnail(None, title_en, thumb_en,
                      thai_ver=False, photo_keyword=thumb_keyword,
-                     ai_prompt=ai_prompt, seed=seed_a)
+                     ai_prompt=ai_prompt, seed=seed_a,
+                     series_tag=series_tag, episode=episode)
     create_thumbnail(None, title_en, thumb_th,
                      thai_ver=True, photo_keyword=thumb_keyword,
-                     ai_prompt=ai_prompt, seed=seed_a)
+                     ai_prompt=ai_prompt, seed=seed_a,
+                     series_tag=series_tag, episode=episode)
     if ai_prompt:
         create_thumbnail(None, title_en, thumb_en_b,
                          thai_ver=False, photo_keyword=thumb_keyword,
-                         ai_prompt=ai_prompt, seed=seed_b)
+                         ai_prompt=ai_prompt, seed=seed_b,
+                         series_tag=series_tag, episode=episode)
         create_thumbnail(None, title_en, thumb_th_b,
                          thai_ver=True, photo_keyword=thumb_keyword,
-                         ai_prompt=ai_prompt, seed=seed_b)
+                         ai_prompt=ai_prompt, seed=seed_b,
+                         series_tag=series_tag, episode=episode)
     else:
         thumb_en_b = thumb_th_b = None
 
@@ -234,13 +284,21 @@ def generate_one_pair(index: int, publish_at: str) -> None:
 
     final_en = make_video(clips, audio_en, title_en, en_words, timestamp, "en", music,
                           thumb_path=thumb_en, content_style=style,
-                          entity_overlays=en_overlays)
+                          entity_overlays=en_overlays,
+                          hook_text=hook_en, loop_text=loop_en, cta_text=cta_en)
     final_th = make_video(clips, audio_th, title_en, th_words, timestamp, "th", music,
                           thumb_path=thumb_th, content_style=style,
-                          entity_overlays=th_overlays)
+                          entity_overlays=th_overlays,
+                          hook_text=hook_th, loop_text=loop_th, cta_text=cta_th)
 
     desc_en     = data.get("description", script_en)
     desc_th     = data.get("description_th", script_th)
+    # Lead the description with the comment-bait question so it shows up top
+    # and primes viewers to comment (engagement signal).
+    if cta_en:
+        desc_en = f"{cta_en}\n\n{desc_en}"
+    if cta_th:
+        desc_th = f"{cta_th}\n\n{desc_th}"
     hashtags_en = data.get("hashtags", ["shorts", "facts", "didyouknow"])
     hashtags_th = data.get("hashtags_th", ["shorts", "เรื่องน่ารู้", "ความรู้"])
 
@@ -300,6 +358,7 @@ def generate_one_pair(index: int, publish_at: str) -> None:
             description=desc, tags=hashtags,
             thumbnail_path=thumb_path,
             lang=lang, publish_at=publish_at,
+            seed_comment=(cta_en if lang == "en" else cta_th),
         )
         # TikTok upload — disabled until official Content Posting API
         # is approved. The cookie path via tiktok-uploader 1.2.0 is

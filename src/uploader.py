@@ -33,9 +33,33 @@ def _get_service():
     return build("youtube", "v3", credentials=creds)
 
 
+def _seed_top_comment(youtube, video_id: str, text: str) -> None:
+    """Post a top-level comment as the channel to prime the conversation
+    (comment-bait question). Best-effort: scheduled/private videos reject
+    comments until they go public, so failures are logged and swallowed.
+
+    NOTE: the YouTube Data API cannot PIN a comment — pinning stays manual.
+    Channel-owner comments still surface prominently without it.
+    """
+    if not text or not text.strip():
+        return
+    try:
+        youtube.commentThreads().insert(
+            part="snippet",
+            body={"snippet": {
+                "videoId": video_id,
+                "topLevelComment": {"snippet": {"textOriginal": text.strip()}},
+            }},
+        ).execute()
+        print(f"  [YouTube] Seed comment posted")
+    except Exception as e:
+        print(f"  [YouTube] Seed comment skipped: {e}")
+
+
 def upload_youtube(video_path: str, title: str, description: str = "",
                    tags: list[str] = None, thumbnail_path: str = None,
-                   lang: str = "en", publish_at: str = None) -> str | None:
+                   lang: str = "en", publish_at: str = None,
+                   seed_comment: str = None) -> str | None:
     youtube = _get_service()
     if not youtube:
         print(f"  [YouTube] Upload skipped — not authenticated")
@@ -86,6 +110,9 @@ def upload_youtube(video_path: str, title: str, description: str = "",
             print(f"  [YouTube] Thumbnail set")
         except Exception as e:
             print(f"  [YouTube] Thumbnail failed: {e}")
+
+    if seed_comment:
+        _seed_top_comment(youtube, vid_id, seed_comment)
 
     return url, vid_id
 

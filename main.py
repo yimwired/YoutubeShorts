@@ -404,13 +404,17 @@ def make_video(clips: list[str], audio_path: str, title: str,
                music: str = None, thumb_path: str = None,
                cut_times: list[float] = None,
                content_style: str = "trending",
-               entity_overlays: list[dict] = None) -> str:
+               entity_overlays: list[dict] = None,
+               hook_text: str = None,
+               loop_text: str = None,
+               cta_text: str = None) -> str:
     print(f"  [{lang.upper()}] Editing...")
     final_path = os.path.join(OUTPUT_DIR, f"short_{timestamp}_{lang}.mp4")
     create_short(clips[0], audio_path, title, "", final_path,
                  words=words, clips=clips, lang=lang, music_path=music,
                  cut_times=cut_times, content_style=content_style,
-                 entity_overlays=entity_overlays)
+                 entity_overlays=entity_overlays,
+                 hook_text=hook_text, loop_text=loop_text, cta_text=cta_text)
     if thumb_path and os.path.exists(thumb_path):
         print(f"  [{lang.upper()}] Adding title card...")
         prepend_title_card(final_path, thumb_path, title, lang)
