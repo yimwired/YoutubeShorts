@@ -29,9 +29,9 @@
   "youtube_video_id": "I3QW0jBFdko",
   "tiktok_url": null,
   "uploaded_at": "2026-05-26T09:24:20.423980+07:00",
-  "analytics_at": "2026-06-28T03:06:00.397256+07:00",
-  "last_views": 37,
-  "last_retention": 29.01,
+  "analytics_at": "2026-06-29T03:09:16.794051+07:00",
+  "last_views": 6,
+  "last_retention": 30.85,
   "ab_swap_at": "2026-06-01T11:02:21.931126+07:00",
   "ab_swap_why": "views 34 < 40% of median 123; retention 25.3% < 45.0%"
 }
