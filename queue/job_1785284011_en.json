@@ -28,5 +28,8 @@
   "youtube_url": "https://youtu.be/fXN4ZSDE7BQ",
   "youtube_video_id": "fXN4ZSDE7BQ",
   "tiktok_url": null,
-  "uploaded_at": "2026-07-29T07:19:41.098179+07:00"
+  "uploaded_at": "2026-07-29T07:19:41.098179+07:00",
+  "analytics_at": "2026-08-01T03:20:26.834997+07:00",
+  "last_views": 5,
+  "last_retention": 82.5
 }
