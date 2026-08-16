@@ -113,6 +113,45 @@ Rules:
 - End with one question or image that stays in the mind
 - Thai translation: poetic, spoken Thai — not formal, not literal"""
 
+SYSTEM_PROMPT_EXPLAINER = """<role>
+คุณคือคนเขียนสคริปต์คลิปสั้นภาษาไทย ให้ช่องที่เล่า "ที่มาของสิ่งที่คนเห็นทุกวันแต่ไม่เคยรู้ว่าเริ่มจากอะไร"
+คนดูคือคนไทยอายุ 15-35 ที่เลื่อนฟีดเร็วมาก คุณมีเวลา 2 วินาทีก่อนเขาปัดทิ้ง
+</role>
+
+<sourcing_rules>
+กฎเหล็ก ผิดข้อนี้คือใช้ไม่ได้ทั้งสคริปต์:
+- ข้อเท็จจริงทุกอย่างในสคริปต์ต้องมาจาก <research_brief> ที่ให้มาเท่านั้น
+- ห้ามเติมปี ชื่อคน ตัวเลข สถานที่ ที่ไม่มีใน brief แม้จะมั่นใจว่าจริง
+- ถ้า brief ไม่มีรายละเอียดพอสำหรับประโยคไหน ให้ตัดประโยคนั้นทิ้ง อย่าเติมเอง
+- ห้ามพูดเกินจริงว่า "ที่สุดในโลก" "ไม่มีใครรู้มาก่อน" ถ้า brief ไม่ได้บอก
+- คุณดัดแปลงได้แค่ "วิธีเล่า" ไม่ใช่ "เนื้อหา"
+</sourcing_rules>
+
+<structure>
+สคริปต์ยาว 45-60 วินาทีเมื่ออ่านออกเสียง แบ่งเป็น 5 ช่วงตามลำดับนี้:
+1. HOOK (ประโยคที่ 1) - ยิงคำถามหรือประโยคที่ขัดกับสิ่งที่คนคิดว่ารู้ ต้องเจาะจงกับเรื่องนี้เท่านั้น
+2. STAKE (2-3) - บอกว่าเดี๋ยวจะเฉลยอะไร ทำให้เขาอยากอยู่ต่อ แต่ยังไม่เฉลย
+3. ORIGIN (4-6) - จุดเริ่มต้นจริง ใคร ปีไหน ที่ไหน ใช้ตัวเลขจาก brief
+4. SPREAD (7-9) - มันลามออกไปได้ยังไง ใครทำให้ดัง ช่วงไหน
+5. REVEAL + LOOP (10-12) - เฉลยจุดที่คนไม่รู้จาก brief แล้วปิดด้วยประโยคที่โยงกลับ HOOK
+</structure>
+
+<tone>
+- เขียนแบบเพื่อนเล่าให้ฟัง ไม่ใช่ผู้ประกาศข่าว ไม่ใช่ครูสอน
+- ประโยคสั้น 8-14 คำไทย พูดจบในลมหายใจเดียว
+- ห้ามใช้: ดังนั้น เนื่องจาก อย่างไรก็ตาม นอกจากนี้ กล่าวคือ ทั้งนี้ - นี่คือภาษาเขียน ไม่ใช่ภาษาพูด
+- ใช้ได้ประปราย: เลย นะ น่ะ ปะ แหละ ก็ - ไม่ต้องทุกประโยค
+- ห้ามลากตัวอักษร (ว้าาาว) ห้ามคำอุทานเกินจริง (โอ้โห บ้าเลย ตายแล้ว)
+- คำถามเชิงวาทศิลป์ใช้ได้ 2-3 ครั้ง เช่น "รู้ปะว่า..." "เดาว่าใครเริ่ม?"
+- ตัวเลขเขียนเป็นคำที่อ่านออกเสียงถูก เช่น "ปี สองพันยี่สิบสาม" ไม่ใช่ "2023"
+</tone>
+
+<visual_rules>
+ทุกประโยคต้องมีภาพที่กล้องถ่ายได้จริง 1 ภาพ
+keyword ที่ให้มาต้องเป็นภาษาอังกฤษ ค้นเจอบน Pexels จริง และตรงกับสิ่งที่กำลังพูด
+เลี่ยง keyword นามธรรม (concept, idea, success) ใช้ของที่ถ่ายได้ (person typing laptop night)
+</visual_rules>"""
+
 SYSTEM_PROMPT = SYSTEM_PROMPT_TRENDING  # default
 
 
@@ -131,21 +170,31 @@ def _call_groq(messages: list, max_tokens: int = 600) -> str:
 
 
 def _call_gemini(messages: list, max_tokens: int = 1200,
-                 json_mode: bool = True) -> str:
-    """Gemini 2.5 Flash. JSON output by default (script generation);
-    json_mode=False returns plain text (e.g. comment replies)."""
+                 json_mode: bool = True,
+                 model: str = "gemini-2.5-flash-lite",
+                 thinking_budget: int | None = None) -> str:
+    """Gemini. JSON output by default (script generation);
+    json_mode=False returns plain text (e.g. comment replies).
+
+    `thinking_budget` is capped explicitly on thinking-capable models:
+    reasoning tokens are drawn from max_output_tokens, so leaving it on
+    dynamic silently truncates a long Thai JSON payload mid-string.
+    """
     system = next((m["content"] for m in messages if m["role"] == "system"), "")
     user   = next((m["content"] for m in messages if m["role"] == "user"),   "")
 
+    cfg = genai_types.GenerateContentConfig(
+        system_instruction=system,
+        temperature=0.85,
+        max_output_tokens=max_tokens,
+        response_mime_type="application/json" if json_mode else "text/plain",
+    )
+    if thinking_budget is not None:
+        cfg.thinking_config = genai_types.ThinkingConfig(
+            thinking_budget=thinking_budget)
+
     resp = _GEMINI_CLIENT.models.generate_content(
-        model="gemini-2.5-flash-lite",
-        contents=user,
-        config=genai_types.GenerateContentConfig(
-            system_instruction=system,
-            temperature=0.85,
-            max_output_tokens=max_tokens,
-            response_mime_type="application/json" if json_mode else "text/plain",
-        ),
+        model=model, contents=user, config=cfg,
     )
     record("gemini")
     text = (resp.text or "").strip()
@@ -155,14 +204,43 @@ def _call_gemini(messages: list, max_tokens: int = 1200,
 
 
 def _llm_call(messages: list, max_tokens: int = 1200,
-              json_mode: bool = True) -> str:
+              json_mode: bool = True,
+              model: str = "gemini-2.5-flash-lite",
+              thinking_budget: int | None = None) -> str:
     """Try Gemini first, fall back to Groq on any failure."""
     if _GEMINI_AVAILABLE:
         try:
-            return _call_gemini(messages, max_tokens, json_mode=json_mode)
+            return _call_gemini(messages, max_tokens, json_mode=json_mode,
+                                model=model, thinking_budget=thinking_budget)
         except Exception as e:
             print(f"[generator] Gemini failed, fallback Groq: {e}")
     return _call_groq(messages, max_tokens)
+
+
+import re as _re
+
+
+def _clean_thai(text: str) -> str:
+    """Strip CJK hallucinations, keeping Thai + digits + basic punctuation."""
+    return _re.sub(r'[^฀-๿\s\d\.,!?\'\"\-\(\)]', '', text).strip()
+
+
+def _parse_json(raw: str) -> dict:
+    """Parse an LLM JSON reply that may be fenced or carry stray control chars.
+
+    strict=False tolerates raw newlines/tabs inside string values, which
+    Groq emits fairly often in Thai content.
+    """
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    try:
+        return json.loads(raw.strip(), strict=False)
+    except json.JSONDecodeError:
+        cleaned = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw.strip())
+        return json.loads(cleaned, strict=False)
 
 
 _CATEGORIES = [
@@ -207,6 +285,110 @@ _CHAOS_CATEGORIES = [
     "phobias and fears that are bizarrely specific",
     "crime records and heists that seem fictional",
 ]
+
+_EXPLAINER_SCHEMA = """<output_schema>
+คืนค่าเป็น JSON object อย่างเดียว ห้ามมีข้อความอื่นนอก JSON
+
+{
+  "title_th":       "ชื่อคลิปภาษาไทย เปิดช่องว่างความอยากรู้ ไม่เกิน 45 ตัวอักษร ห้ามใส่ #",
+  "hook_th":        "ข้อความขึ้นจอ 2 วินาทีแรก ยาว 10-16 ตัวอักษรไทย ต้องมีคำเฉพาะของเรื่องนี้อยู่ในนั้น จนคนอ่านแล้วรู้ว่ากำลังพูดเรื่องอะไร ห้าม 'ใครคิด?' 'รู้หรือไม่' 'มาจากไหน' ที่ใช้กับคลิปไหนก็ได้",
+  "thumb_text_th":  "ข้อความบนภาพปก 2-4 คำ ไม่เกิน 18 ตัวอักษร อ่านออกจากจอมือถือขนาดเล็ก",
+  "loop_th":        "ประโยคปิดท้ายขึ้นจอ ไม่เกิน 20 ตัวอักษร โยงกลับ hook ให้คนอยากดูซ้ำ",
+  "cta_th":         "คำถามชวนคอมเมนต์ 3-8 คำ ต้องอ้างถึงเรื่องในคลิปโดยตรง ตอบได้ทันทีโดยไม่ต้องคิดนาน ห้าม 'คุณชอบไหม' 'คิดยังไง' ที่ถามกับคลิปไหนก็ได้",
+  "sentences": [
+    {
+      "text_th":   "หนึ่งประโยคพูด 8-14 คำ",
+      "keyword":   "english pexels video search term for this exact moment",
+      "fallback":  "one or two word backup",
+      "ai_prompt": "ใส่เฉพาะประโยคที่ stock footage ทำไม่ได้ (ดู ai_prompt_rules) นอกนั้นเว้นเป็นสตริงว่าง"
+    }
+  ],
+  "entities":       [{"name": "ชื่อภาษาอังกฤษสำหรับค้น Wikipedia", "sentence_idx": 0}],
+  "description_th": "คำอธิบายคลิป 2-3 ประโยค ปิดท้ายด้วย 'ติดตามเพื่อรับความรู้ใหม่ทุกวัน! #Shorts'",
+  "hashtags_th":    ["shorts", "อีก 7 แท็กไทยที่คนค้นจริง"],
+  "music_mood":     "หนึ่งคำจาก: mysterious|dramatic|upbeat|melancholic|epic|peaceful|tense|inspiring",
+  "thumbnail_keyword": "english pexels photo search term",
+  "thumbnail_prompt":  "english AI image prompt — cinematic, ultra realistic, high contrast, one hero subject filling the frame, no text"
+}
+</output_schema>
+
+<ai_prompt_rules>
+ใส่ ai_prompt ให้ 2-3 ประโยคเท่านั้น ที่เหลือเว้นเป็น ""
+เลือกประโยคที่ stock footage หาไม่ได้จริงๆ ปกติคือ:
+- ประโยค ORIGIN ที่เป็นเหตุการณ์เฉพาะเจาะจงในอดีต (คนนี้ ปีนี้ ที่นี่)
+- ประโยค REVEAL ที่เป็นจุดเฉลย
+ai_prompt เขียนเป็นภาษาอังกฤษ บรรยายภาพเดียวที่เห็นได้จริง:
+ใคร ทำอะไร ที่ไหน ยุคไหน แสงแบบไหน
+ตัวอย่างดี: "1886 Atlanta pharmacy, bearded pharmacist pouring dark syrup
+into a glass, warm gaslight, wooden counter, close up"
+ตัวอย่างแย่: "the origin of a famous drink" (นามธรรม ไม่มีภาพ)
+ห้ามใส่ตัวหนังสือหรือโลโก้ในภาพ ห้ามใส่ชื่อคนที่ยังมีชีวิต
+</ai_prompt_rules>
+
+<field_rules>
+- sentences: ต้องมี 11-12 ประโยค เรียงตามโครง HOOK/STAKE/ORIGIN/SPREAD/REVEAL
+    (วัดจากของจริง: เสียงพากย์ใช้เวลาราว 4.4 วินาทีต่อประโยครวมจังหวะหยุด
+     12 ประโยคคือราว 53 วินาที ซึ่งคือเป้าหมาย)
+- entities: 2-4 รายการ เฉพาะคน องค์กร สถานที่ ผลิตภัณฑ์ ที่มีชื่อเฉพาะและมีหน้า Wikipedia
+    ถ้า brief ไม่มีชื่อเฉพาะเลย ให้คืน array ว่าง ห้ามคิดชื่อขึ้นมาเอง
+- ทุกฟิลด์ภาษาไทยต้องเป็นอักษรไทยล้วน ห้ามมีอักษรจีน ญี่ปุ่น เกาหลี
+- hook_th กับ thumb_text_th ต้องไม่ซ้ำข้อความกัน
+</field_rules>"""
+
+
+def generate_explainer_script(brief, used_titles: list = None) -> dict:
+    """Turn a researched Brief into a Thai-only explainer script.
+
+    `brief` is a src.research.Brief. Everything factual in the output
+    traces back to it -- the model's job here is delivery, not recall.
+    """
+    avoid_block = ""
+    if used_titles:
+        avoid_block = ("\n<already_published>\n"
+                       + "\n".join(f"- {t}" for t in used_titles[-40:])
+                       + "\n</already_published>\n")
+
+    prompt = (
+        "<research_brief>\n" + brief.as_prompt_block() + "\n</research_brief>\n"
+        + avoid_block +
+        "\nเขียนสคริปต์คลิปสั้น 45-60 วินาที จาก <research_brief> ข้างบน\n"
+        "ลำดับการทำงาน:\n"
+        "1. อ่าน brief ให้ครบก่อน แล้วเลือกว่าจะเก็บ 'จุดเฉลยท้ายคลิป' ไว้เฉลยประโยคไหน\n"
+        "2. เขียน hook ที่ตั้งคำถามซึ่งจะถูกเฉลยด้วยจุดนั้นพอดี\n"
+        "3. เขียนประโยคที่เหลือให้เดินจากจุดเริ่มต้นไปหาจุดเฉลย\n"
+        "4. ตรวจทุกประโยคอีกรอบว่ามีข้อเท็จจริงที่ไม่ได้อยู่ใน brief หลุดเข้ามาไหม ถ้ามีให้ตัดออก\n\n"
+        + _EXPLAINER_SCHEMA
+    )
+
+    # flash, not flash-lite: this call has to hold a 6-field brief, a
+    # 15-sentence structure and a no-invention rule at the same time,
+    # and lite drifts on the sourcing rule first.
+    raw = _llm_call([
+        {"role": "system", "content": SYSTEM_PROMPT_EXPLAINER},
+        {"role": "user",   "content": prompt},
+    ], max_tokens=12000, model="gemini-2.5-flash", thinking_budget=2048)
+
+    data = _parse_json(raw)
+
+    sentences = data.get("sentences", [])
+    data["script_th"] = " ".join(s.get("text_th", "") for s in sentences)
+    data["script_en"] = ""      # TH-only format; kept for downstream compat
+    data["keywords"]  = [{"specific": s.get("keyword", ""),
+                          "fallback": s.get("fallback", "")}
+                         for s in sentences]
+
+    for key in ("title_th", "hook_th", "loop_th", "cta_th", "thumb_text_th",
+                "script_th"):
+        if data.get(key):
+            data[key] = _clean_thai(data[key])
+    for s in sentences:
+        s["text_th"] = _clean_thai(s.get("text_th", ""))
+
+    data["category"]     = brief.topic
+    data["brief_source"] = brief.source
+    data["research_raw"] = brief.raw
+    return data
+
 
 def generate_fact_script(topic: str = None, used_titles: list = None,
                          style: str = "trending") -> dict:
@@ -309,29 +491,12 @@ def generate_fact_script(topic: str = None, used_titles: list = None,
         '"music_mood":"mysterious","thumbnail_keyword":"golden honey jar macro"}'
     )
 
-    import re as _re
-
-    def _clean_thai(text: str) -> str:
-        # Keep only Thai chars + spaces + basic punctuation
-        return _re.sub(r'[^฀-๿\s\d\.,!?\'\"\-\(\)]', '', text).strip()
-
     raw = _llm_call([
         {"role": "system", "content": system},
         {"role": "user", "content": prompt},
     ], max_tokens=3000)
 
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    # strict=False tolerates raw control chars (newlines, tabs) inside JSON
-    # string values — Groq sometimes emits them in Thai content.
-    try:
-        data = json.loads(raw.strip(), strict=False)
-    except json.JSONDecodeError:
-        cleaned = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw.strip())
-        data = json.loads(cleaned, strict=False)
+    data = _parse_json(raw)
 
     # Build script_en / script_th / keywords from sentences (backward compat)
     sentences = data.get("sentences", [])

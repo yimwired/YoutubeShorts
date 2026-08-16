@@ -1,5 +1,10 @@
 name: Daily Video Generation
 
+# Since 2026-08-16 this produces a single Thai explainer short per day at
+# 12:00 Bangkok, replacing three EN+TH pairs across 08:00/12:00/19:00.
+# See the module docstring in generate_batch.py for the analytics behind
+# the change.
+
 on:
   # Primary runner since 2026-06-10 (full-cloud migration). The TikTok
   # blocker that forced a local runner is gone: cookie-based upload broke
@@ -63,7 +68,10 @@ jobs:
           TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_VIDEO_LOG_DB_ID: ${{ secrets.NOTION_VIDEO_LOG_DB_ID }}
-        run: python generate_batch.py 3
+        # One Thai video a day, published at 12:00 Bangkok. Generating at
+        # 06:00 leaves six hours of slack for a research or TTS retry
+        # before the scheduled publish time.
+        run: python generate_batch.py 1
 
       # Queue jobs + B thumbnails must land in the repo: the swap workflow
       # (swap.yml, 02:00 Bangkok) runs on a fresh runner days later and reads

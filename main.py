@@ -407,7 +407,18 @@ def make_video(clips: list[str], audio_path: str, title: str,
                entity_overlays: list[dict] = None,
                hook_text: str = None,
                loop_text: str = None,
-               cta_text: str = None) -> str:
+               cta_text: str = None,
+               title_card: bool = True,
+               outro_card: bool = True) -> str:
+    """Render one finished short.
+
+    `title_card` / `outro_card` default on for the legacy slot styles.
+    Both are off for the explainer format, and deliberately so:
+      - the title card opens on 0.8s of silent still image, which is the
+        exact window a Shorts viewer decides to swipe in
+      - the outro card ends on black + silence, which breaks the loop back
+        to frame one that replays depend on
+    """
     print(f"  [{lang.upper()}] Editing...")
     final_path = os.path.join(OUTPUT_DIR, f"short_{timestamp}_{lang}.mp4")
     create_short(clips[0], audio_path, title, "", final_path,
@@ -415,11 +426,12 @@ def make_video(clips: list[str], audio_path: str, title: str,
                  cut_times=cut_times, content_style=content_style,
                  entity_overlays=entity_overlays,
                  hook_text=hook_text, loop_text=loop_text, cta_text=cta_text)
-    if thumb_path and os.path.exists(thumb_path):
+    if title_card and thumb_path and os.path.exists(thumb_path):
         print(f"  [{lang.upper()}] Adding title card...")
         prepend_title_card(final_path, thumb_path, title, lang)
-    print(f"  [{lang.upper()}] Adding outro card...")
-    append_outro_card(final_path, lang)
+    if outro_card:
+        print(f"  [{lang.upper()}] Adding outro card...")
+        append_outro_card(final_path, lang)
     print(f"  [{lang.upper()}] Saved: {final_path}")
     return final_path
 

@@ -6,6 +6,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 _BASE       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONT_IMPACT = "C:/Windows/Fonts/impact.ttf" if os.name == "nt" else os.path.join(_BASE, "Kanit-Bold.ttf")
 FONT_BOLD   = "C:/Windows/Fonts/arialbd.ttf" if os.name == "nt" else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+# Bundled with the repo so the cloud runner renders Thai identically.
+FONT_TH     = os.path.join(_BASE, "Kanit-Bold.ttf")
 PEXELS_KEY  = os.getenv("PEXELS_API_KEY")
 
 W, H = 1080, 1920
@@ -109,8 +111,15 @@ def _wrap_text(text, font, max_width):
     return lines
 
 
-def _build_base(img: Image.Image, title: str) -> Image.Image:
-    """Apply overlay + title text. Returns RGBA image."""
+def _build_base(img: Image.Image, title: str,
+                badge_text: str | None = None,
+                lang: str = "en") -> Image.Image:
+    """Apply overlay + badge + title text. Returns RGBA image.
+
+    `badge_text` replaces the generic "DID YOU KNOW?" strip with this
+    video's own hook. A badge that reads the same on every thumbnail
+    stops carrying information after a viewer has seen two of them.
+    """
     img = img.filter(ImageFilter.GaussianBlur(radius=3))
 
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -127,9 +136,11 @@ def _build_base(img: Image.Image, title: str) -> Image.Image:
     img = Image.alpha_composite(img.convert("RGBA"), overlay)
     draw = ImageDraw.Draw(img)
 
-    # Hook badge
-    hook_font = ImageFont.truetype(FONT_BOLD, 58)
-    hook = "DID YOU KNOW?"
+    # Hook badge — this video's own hook when we have one
+    badge_face = FONT_TH if lang == "th" else FONT_BOLD
+    hook = (badge_text or "").strip() or ("รู้หรือเปล่า?" if lang == "th"
+                                          else "DID YOU KNOW?")
+    hook_font = ImageFont.truetype(badge_face, 58 if len(hook) <= 18 else 46)
     hw = int(draw.textlength(hook, font=hook_font))
     pad = 28
     bx0, by0 = W // 2 - hw // 2 - pad, 70
@@ -137,11 +148,14 @@ def _build_base(img: Image.Image, title: str) -> Image.Image:
                             radius=40, fill=(255, 210, 0))
     draw.text((W // 2, by0 + 40), hook, font=hook_font, fill="#111111", anchor="mm")
 
-    # Title
+    # Title. Impact has no Thai glyphs, so Thai falls back to Kanit and
+    # keeps its own casing (upper() is a no-op on Thai anyway).
+    title_face = FONT_TH if lang == "th" else FONT_IMPACT
     font_size = 160 if len(title) <= 12 else 130 if len(title) <= 20 else 105
-    title_font = ImageFont.truetype(FONT_IMPACT, font_size)
+    title_font = ImageFont.truetype(title_face, font_size)
     line_h = int(font_size * 1.15)
-    lines = _wrap_text(title.upper(), title_font, W - 60)
+    lines = _wrap_text(title if lang == "th" else title.upper(),
+                       title_font, W - 60)
     start_y = H // 2 - len(lines) * line_h // 2 + 60
     COLORS = ["#FFFFFF", "#FFE000", "#FF6B35", "#FFFFFF"]
     for i, line in enumerate(lines):
@@ -150,8 +164,10 @@ def _build_base(img: Image.Image, title: str) -> Image.Image:
                             title_font, fill=color, stroke_w=10, anchor="mm")
 
     # CTA
-    cta_font = ImageFont.truetype(FONT_BOLD, 52)
-    _draw_text_outlined(draw, (W // 2, H - 140), "Watch to the end!",
+    cta_face = FONT_TH if lang == "th" else FONT_BOLD
+    cta_text = "ดูให้จบแล้วจะอึ้ง" if lang == "th" else "Watch to the end!"
+    cta_font = ImageFont.truetype(cta_face, 52)
+    _draw_text_outlined(draw, (W // 2, H - 140), cta_text,
                         cta_font, fill="white", stroke_w=4, anchor="mm")
 
     return img
@@ -164,7 +180,9 @@ def create_thumbnail(video_path: str, title: str, output_path: str,
                      clips: list = None,
                      seed: int | None = None,
                      series_tag: str = None,
-                     episode: int | None = None) -> str:
+                     episode: int | None = None,
+                     lang: str = "en",
+                     badge_text: str = None) -> str:
 
     # ── Background priority: Pollinations AI → clip frame → Pexels → video frame → dark ──
     bg_path = output_path.replace(".jpg", "_bg.jpg")
@@ -202,7 +220,7 @@ def create_thumbnail(video_path: str, title: str, output_path: str,
     img = Image.open(bg_path).convert("RGB").resize((W, H))
     os.remove(bg_path)
 
-    base = _build_base(img, title)   # RGBA
+    base = _build_base(img, title, badge_text=badge_text, lang=lang)   # RGBA
 
     # ── Series badge (top-right) — signals an ongoing series so binge
     #    watchers and returning subscribers recognize the format. ─────

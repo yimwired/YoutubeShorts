@@ -10,6 +10,20 @@ CLI:
   python -m src.tiktok_api login
   python -m src.tiktok_api upload <video_path> "<title>"
   python -m src.tiktok_api refresh
+
+Two posting modes, because TikTok gates them differently:
+
+  inbox  (default) — scope video.upload. No app audit. The video is sent to
+                     the creator's TikTok inbox and they tap post. Works the
+                     day the app is registered.
+  direct           — scope video.publish. Requires passing TikTok's full app
+                     audit (2-4 weeks, several review rounds, and the app has
+                     to display the creator's username and avatar before each
+                     post). An unaudited client is forced to SELF_ONLY, i.e.
+                     nobody but the creator can see it.
+
+Switch with TIKTOK_MODE=direct and TIKTOK_SCOPES once the audit clears.
+Setup checklist lives in docs/tiktok-setup.md.
 """
 import os
 import sys
@@ -35,12 +49,29 @@ def _pkce_pair() -> tuple[str, str]:
 
 TOKEN_FILE   = "token_tiktok.json"
 REDIRECT_URI = "http://localhost:8080/callback"
-SCOPES       = "user.info.basic,video.upload,video.publish"
-PORT         = 8080
+
+# video.upload, not video.publish, by default.
+#
+# video.publish posts straight to the profile but is gated behind TikTok's
+# full app audit (2-4 weeks, multiple review rounds, and the app must show
+# the creator's username and avatar before every post). Until that passes,
+# an unaudited client can only post SELF_ONLY -- private to the creator --
+# which is worth nothing for reach.
+#
+# video.upload needs no audit. The video lands in the creator's TikTok
+# inbox and they tap post. That is one tap a day against a month of review
+# for the last 5% of the automation, so it is the default.
+#
+# Set TIKTOK_SCOPES="user.info.basic,video.publish" once the audit clears.
+SCOPES = os.getenv("TIKTOK_SCOPES", "user.info.basic,video.upload")
+PORT   = 8080
 
 OAUTH_AUTHORIZE = "https://www.tiktok.com/v2/auth/authorize/"
 OAUTH_TOKEN     = "https://open.tiktokapis.com/v2/oauth/token/"
+# Direct post — needs video.publish and a passed audit.
 POST_INIT       = "https://open.tiktokapis.com/v2/post/publish/video/init/"
+# Inbox upload — needs only video.upload; the creator confirms in the app.
+INBOX_INIT      = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
 POST_STATUS     = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
 
 
@@ -211,12 +242,22 @@ def get_access_token() -> str | None:
 # ── Upload ──────────────────────────────────────────────────────────────────
 
 def upload(video_path: str, title: str,
-           privacy: str = "SELF_ONLY") -> str | None:
-    """Upload video via Content Posting API.
+           privacy: str = "SELF_ONLY",
+           mode: str = None) -> str | None:
+    """Send a video to TikTok via the Content Posting API.
 
-    privacy: SELF_ONLY (sandbox), MUTUAL_FOLLOW_FRIENDS, PUBLIC_TO_EVERYONE (post review).
+    mode="inbox"  — lands in the creator's TikTok inbox; they tap post.
+                    Needs only video.upload, no audit. Default.
+    mode="direct" — posts straight to the profile. Needs video.publish and
+                    a passed app audit; without one TikTok forces the post
+                    to SELF_ONLY regardless of `privacy`.
+
+    `privacy` applies to direct mode only (SELF_ONLY,
+    MUTUAL_FOLLOW_FRIENDS, PUBLIC_TO_EVERYONE).
     Returns a profile URL on success, None on failure.
     """
+    mode = mode or os.getenv("TIKTOK_MODE", "inbox")
+
     access = get_access_token()
     if not access:
         print("  [TikTok API] Not logged in — run: python -m src.tiktok_api login")
@@ -233,25 +274,34 @@ def upload(video_path: str, title: str,
         chunk_size   = 64 * 1024 * 1024
         total_chunks = (size + chunk_size - 1) // chunk_size
 
-    init_body = {
-        "post_info": {
-            "title":                    title[:2200],
-            "privacy_level":            privacy,
-            "disable_duet":             False,
-            "disable_comment":          False,
-            "disable_stitch":           False,
-            "video_cover_timestamp_ms": 1000,
-        },
-        "source_info": {
-            "source":            "FILE_UPLOAD",
-            "video_size":        size,
-            "chunk_size":        chunk_size,
-            "total_chunk_count": total_chunks,
-        },
+    source_info = {
+        "source":            "FILE_UPLOAD",
+        "video_size":        size,
+        "chunk_size":        chunk_size,
+        "total_chunk_count": total_chunks,
     }
-    print(f"  [TikTok API] INIT publish ({size/1024/1024:.1f} MB)...")
+    if mode == "direct":
+        endpoint  = POST_INIT
+        init_body = {
+            "post_info": {
+                "title":                    title[:2200],
+                "privacy_level":            privacy,
+                "disable_duet":             False,
+                "disable_comment":          False,
+                "disable_stitch":           False,
+                "video_cover_timestamp_ms": 1000,
+            },
+            "source_info": source_info,
+        }
+    else:
+        # The inbox endpoint takes no post_info -- caption and privacy are
+        # chosen by the creator in the app at confirm time.
+        endpoint  = INBOX_INIT
+        init_body = {"source_info": source_info}
+
+    print(f"  [TikTok API] INIT {mode} ({size/1024/1024:.1f} MB)...")
     r = requests.post(
-        POST_INIT,
+        endpoint,
         headers={
             "Authorization": f"Bearer {access}",
             "Content-Type":  "application/json; charset=UTF-8",
@@ -297,8 +347,12 @@ def upload(video_path: str, title: str,
         )
         sd     = s.json().get("data", {})
         status = sd.get("status", "")
-        if status == "PUBLISH_COMPLETE":
-            print(f"  [TikTok API] Done")
+        # Direct post finishes at PUBLISH_COMPLETE; an inbox upload finishes
+        # at SEND_TO_USER_INBOX and waits there for the creator to confirm.
+        if status in ("PUBLISH_COMPLETE", "SEND_TO_USER_INBOX"):
+            print(f"  [TikTok API] Done ({status})")
+            if status == "SEND_TO_USER_INBOX":
+                print("  [TikTok API] Open TikTok → notifications → confirm to post")
             return "https://www.tiktok.com/@me"
         if status in ("FAILED", "PROCESSING_DOWNLOAD_FAILED"):
             print(f"  [TikTok API] Failed: {sd}")

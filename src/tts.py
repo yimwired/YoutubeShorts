@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 import edge_tts
 from edge_tts.exceptions import NoAudioReceived
@@ -206,6 +207,17 @@ def generate_voiceover(script: str, output_path: str,
     events (which Premwadee TH does not emit reliably).
     """
     if lang == "th":
+        # Gemini TTS first -- markedly more natural prosody than Premwadee,
+        # and it takes a style instruction. It is a preview model on a tight
+        # quota though, so every failure mode drops through to edge-tts.
+        if (sentences and len(sentences) > 1
+                and os.getenv("GEMINI_TTS_DISABLED") != "1"):
+            from src.tts_gemini import generate_thai
+            ok, boundaries = generate_thai(sentences, output_path)
+            if ok:
+                return output_path, boundaries
+            print("  [TTS] Gemini TTS unavailable — falling back to edge-tts")
+
         rate = {"chaos": "+5%", "narrative": "-8%"}.get(style, "+8%")
         if sentences and len(sentences) > 1:
             boundaries = _premwadee_per_sentence(sentences, output_path, rate=rate)

@@ -1,13 +1,18 @@
 name: Auto-Reply Comments
 
 # Replies to the top unanswered comment on recent uploads (Bigger #9).
-# Runs nightly after the evening slot publishes. comment_reply_state.json
-# tracks replied comment ids and is committed back so reruns never reply
-# to the same comment twice.
+# comment_reply_state.json tracks replied comment ids and is committed back
+# so reruns never reply to the same comment twice.
+#
+# Two passes a day since 2026-08-16. The video publishes at 12:00 Bangkok
+# and early replies are what pull a comment thread into existence, so the
+# first pass lands an hour after publish instead of nine hours later. The
+# evening pass then catches whatever arrived during the afternoon.
 
 on:
   schedule:
-    - cron: '0 14 * * *'   # 21:00 Bangkok (UTC+7)
+    - cron: '0 6 * * *'    # 13:00 Bangkok — 1h after publish
+    - cron: '0 14 * * *'   # 21:00 Bangkok — evening sweep
   workflow_dispatch:
     inputs:
       live:

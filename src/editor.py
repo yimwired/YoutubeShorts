@@ -13,13 +13,19 @@ WORD_GAP  = 0.07
 # ── Thai ASS karaoke helpers ─────────────────────────────────────────────────
 
 def _ass_header(style: str = "trending") -> str:
-    # Format: Fontname, Size, Primary(highlight), Secondary(dim), Outline, Back
+    # Fontname, Size, Primary(highlight), Secondary(dim), Outline, Back,
+    # OutlineWidth, ShadowDepth
     _styles = {
-        "trending":  ("Kanit", 68,  "&H0000E0FF", "&H00FFFFFF", "&H00000000", "&H90000000"),
-        "chaos":     ("Kanit", 78,  "&H000060FF", "&H00FFFFFF", "&H00000000", "&H90000000"),
-        "narrative": ("Kanit", 58,  "&H00E8E8E8", "&H00888888", "&H00000000", "&H80000000"),
+        "trending":  ("Kanit", 68, "&H0000E0FF", "&H00FFFFFF", "&H00000000", "&H90000000", 3, 1),
+        "chaos":     ("Kanit", 78, "&H000060FF", "&H00FFFFFF", "&H00000000", "&H90000000", 3, 1),
+        "narrative": ("Kanit", 58, "&H00E8E8E8", "&H00888888", "&H00000000", "&H80000000", 3, 1),
+        # Heavier than the rest on purpose. A 3px outline disappears when
+        # white subtitles land on bright stock footage (snow, sky, sand),
+        # and on a phone that reads as a video with no subtitles at all.
+        "explainer": ("Kanit", 76, "&H0000E0FF", "&H00FFFFFF", "&H00000000", "&HA0000000", 6, 3),
     }
-    font, size, pri, sec, outline, back = _styles.get(style, _styles["trending"])
+    (font, size, pri, sec, outline, back,
+     outline_w, shadow) = _styles.get(style, _styles["trending"])
     return f"""\
 [Script Info]
 ScriptType: v4.00+
@@ -29,7 +35,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font},{size},{pri},{sec},{outline},{back},-1,0,0,0,100,100,0,0,1,3,1,5,20,20,0,1
+Style: Default,{font},{size},{pri},{sec},{outline},{back},-1,0,0,0,100,100,0,0,1,{outline_w},{shadow},5,20,20,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -291,7 +297,13 @@ def append_outro_card(video_path: str, lang: str = "en",
     return video_path
 
 
-_HOOK_COLORS = {"trending": "#FFE000", "chaos": "#FF2EA0", "narrative": "#00E0FF"}
+_HOOK_COLORS = {"trending": "#FFE000", "chaos": "#FF2EA0",
+                "narrative": "#00E0FF", "explainer": "#FFE000"}
+
+# How long the hook stays up. The old 2.0s ended right as the viewer was
+# still deciding; the swipe-away call happens across the first ~3s, so the
+# promise should still be legible at the end of that window.
+_HOOK_END = 2.6
 
 
 def _hook_size(text: str) -> int:
@@ -300,16 +312,24 @@ def _hook_size(text: str) -> int:
     return 132 if n <= 12 else 108 if n <= 18 else 88 if n <= 26 else 72
 
 
-def _hook_overlay(style: str, lang: str, text: str = None) -> str:
-    """Return a single ffmpeg drawtext filter that shows a big retention
-    hook line during the first 2 seconds. Fades in/out and bounces a few
-    pixels so the eye locks on. Sits above the subtitle band so it never
-    fights captions. `text` is the fact-specific hook from the generator;
-    falls back to a generic line per style if absent."""
+def _hook_overlay(style: str, lang: str, text: str = None) -> list[str]:
+    """Filters that slam the retention hook onto the opening frames.
+
+    Built as a three-stage scale pop rather than one static line:
+    drawtext cannot animate fontsize, so three copies at 118% / 94% / 100%
+    are switched between over the first 0.3s. The eye reads that as the
+    text punching in, which holds attention through the swipe window in a
+    way a cross-fade does not. A translucent plate behind it keeps the
+    text legible over bright stock footage.
+
+    `text` is the fact-specific hook from the generator; a generic
+    per-style line stands in when it is missing.
+    """
     FALLBACK = {
         "trending":  {"en": "DID YOU KNOW?",  "th": "รู้หรือเปล่า?"},
         "chaos":     {"en": "WAIT FOR IT...", "th": "ห้ามพลาด"},
         "narrative": {"en": "TRUE STORY",     "th": "เรื่องจริง"},
+        "explainer": {"en": "HERE IS WHY",    "th": "มันเริ่มจากอะไร?"},
     }
     color = _HOOK_COLORS.get(style, _HOOK_COLORS["trending"])
     if text and text.strip():
@@ -317,21 +337,39 @@ def _hook_overlay(style: str, lang: str, text: str = None) -> str:
     else:
         fb   = FALLBACK.get(style, FALLBACK["trending"])
         disp = fb["en"] if lang == "en" else fb["th"]
+
     font = FONT_EN if lang == "en" else FONT_TH
-    # Fade-in 0.25s, hold to 1.6s, fade-out to 2.0s.
-    alpha = ("if(lt(t,0.25),t/0.25,"
-             "if(lt(t,1.6),1,"
-             "if(lt(t,2.0),(2.0-t)/0.4,0)))")
-    # Subtle bounce -- amplitude ~8px around y = 18% of height.
-    y_expr = "h*0.18+sin(t*9)*8"
-    return (
-        f"drawtext=fontfile='{font}':text='{_escape(disp)}':"
-        f"fontsize={_hook_size(disp)}:fontcolor={color}:"
-        f"borderw=6:bordercolor=black:"
-        f"x=(w-text_w)/2:y={y_expr}:"
-        f"alpha='{alpha}':"
-        f"enable='between(t\\,0\\,2.0)'"
-    )
+    base = _hook_size(disp)
+    esc  = _escape(disp)
+    end  = _HOOK_END
+    fade = round(end - 0.35, 2)
+
+    # Contrast plate — sized off the largest of the three stages so it
+    # never clips the text mid-pop.
+    parts = [
+        f"drawbox=x=0:y=ih*0.13:w=iw:h={int(base * 1.18 * 1.7)}:"
+        f"color=black@0.42:t=fill:enable='between(t\\,0\\,{end})'"
+    ]
+
+    stages = [
+        (0.00, 0.12, 1.18),   # punch in oversized
+        (0.12, 0.30, 0.94),   # overshoot back
+        (0.30, end,  1.00),   # settle
+    ]
+    for t0, t1, scale in stages:
+        # Only the settled stage fades out; the two pop frames are too
+        # brief to fade and would just flicker.
+        alpha = (f"if(lt(t,{fade}),1,({end}-t)/0.35)"
+                 if scale == 1.00 else "1")
+        parts.append(
+            f"drawtext=fontfile='{font}':text='{esc}':"
+            f"fontsize={int(base * scale)}:fontcolor={color}:"
+            f"borderw=7:bordercolor=black:"
+            f"shadowcolor=black@0.8:shadowx=4:shadowy=4:"
+            f"x=(w-text_w)/2:y=h*0.18-text_h/2:"
+            f"alpha='{alpha}':enable='between(t\\,{t0}\\,{t1})'"
+        )
+    return parts
 
 
 def _endcard_overlay(style: str, lang: str, loop_text: str,
@@ -398,7 +436,10 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
                  loop_text: str = None,
                  cta_text: str = None) -> str:
 
-    audio_dur = min(_clip_duration(audio_path) + 0.5, 58.0)
+    # 58s was sized for the old ~30s scripts plus a title and outro card.
+    # The explainer format targets 45-60s of speech with no cards, so the
+    # cap has to clear 60 or the reveal gets guillotined off the end.
+    audio_dur = min(_clip_duration(audio_path) + 0.5, 62.0)
 
     # ── Pre-mix audio: voiceover + background music ──────────────
     final_audio = audio_path
@@ -448,7 +489,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
     # fades in/out with a subtle bounce. Style-specific copy makes the
     # first frame promise something so viewers wait past the swipe-away
     # threshold.
-    text_parts.append(_hook_overlay(content_style, lang, hook_text))
+    text_parts += _hook_overlay(content_style, lang, hook_text)
 
     if lang == "th":
         pass  # all TH styles: ASS karaoke in pass 2 (see below)

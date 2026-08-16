@@ -4,15 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Purpose
 
-Automated YouTube Shorts pipeline — generate fact/script + footage + voice + subtitle + thumbnail → schedule upload. **3 content slots ต่อวัน (Bangkok time):**
+Automated YouTube Shorts pipeline — research + script + footage + voice + subtitle + thumbnail → scheduled upload.
 
-| Slot | Time | Style | Voice (EN/TH) | System prompt |
-|---|---|---|---|---|
-| Morning | 08:00 | `trending` | EN AnaNeural / TH PremwadeeNeural (edge-tts) | viral facts |
-| Noon | 12:00 | `chaos` | EN AnaNeural +15% / TH gTTS | brain rot, reaction words |
-| Evening | 19:00 | `narrative` | EN calm / TH gTTS | จิตวิทยา/ธรรมชาติสอนใจ (documentary) |
+**ตั้งแต่ 2026-08-16: วันละ 1 คลิป ภาษาไทยอย่างเดียว publish 12:00 Bangkok.**
+`POST_HOURS = [12]`, `SLOT_STYLES = {12: "explainer"}` ใน `generate_batch.py`.
 
-`SLOT_STYLES = {8: "trending", 12: "chaos", 19: "narrative"}` ใน `generate_batch.py`.
+เหตุผลที่เปลี่ยนจาก 3 slot × EN+TH pair (analytics 60 วัน ก่อนเปลี่ยน):
+
+| | median views | median retention |
+|---|---|---|
+| TH | 196 | 59.7% |
+| EN | 66 | 33.4% |
+
+slot 08/12/19 median = 132 / 98 / 104 → เวลาลงไม่ใช่ตัวแปร. AVD 23 วิ, 82 subs
+และ 5 comments จาก 70k views ใน 60 วัน → คุณภาพต่อคลิปคือคอขวด ไม่ใช่จำนวน.
+งบ render ทั้งหมดเลยไปลงที่คลิปเดียวแทนหกคลิป.
+
+**Format = explainer** — เล่า "ที่มาของสิ่งที่กำลังฮิต / สิ่งที่คนคิดว่ารู้แล้ว"
+ยาว 45-60 วิ โครง HOOK → STAKE → ORIGIN → SPREAD → REVEAL+LOOP.
+
+Styles เดิม (`trending` / `chaos` / `narrative`) ยังอยู่ใน `src/generator.py`
+เพราะ `test_trending.py` / `test_chaos.py` / `test_narrative.py` ยังเรียกใช้ —
+แต่ daily run ไม่แตะแล้ว.
 
 ## Two-Process Architecture
 
@@ -32,14 +45,37 @@ generate_batch.py  → queue/job_<ts>_<lang>.json + output/short_<ts>_<lang>.mp4
 
 ## Pipeline (per video)
 
-`main.py` → `make_video()` calls in order:
-1. `src/generator.py:generate_fact_script` — Claude API, returns `sentences[]` (each w/ keyword) + `script_en`/`script_th`/`title_en`/`title_th`
-2. `src/footage.py:fetch_multiple_clips` — Pexels API, 1 clip per sentence (5 clips/video), portrait-first, skip <5s, random top 3 by resolution
-3. `src/tts.py:generate_voiceover` — edge-tts (trending TH = PremwadeeNeural, chaos EN = AnaNeural +15%, narrative TH = gTTS)
-4. `src/captions.py` — faster-whisper, word-level timestamps
-5. `src/editor.py:create_short` — ffmpeg ASS karaoke (2-pass), Kanit font, highlight สีเหลือง
-6. `src/thumbnail.py` — Pollinations flux-pro → clip frame → Pexels → video frame (fallback chain)
-7. `src/uploader.py:upload_youtube` — YouTube Data API v3 (called by scheduler)
+`generate_batch.py:generate_one()` เรียงตามนี้:
+1. `src/trends.py:get_trend_candidates` — Google Trends RSS (TH+US) + YouTube most-popular chart TH, กรอง noise regex ออก
+2. `src/research.py:get_brief` — **Gemini + Google Search grounding** เลือกหัวข้อที่เล่า "ที่มา" ได้ แล้วขุด origin/spread/numbers/surprise. ไม่มีเทรนด์ผ่านเกณฑ์ → `research_evergreen()` จาก `EXPLAINER_CATEGORIES`. คืน `Brief` หรือ `None`
+3. `src/generator.py:generate_explainer_script` — gemini-2.5-flash เขียนสคริปต์ไทย 11-12 ประโยค **ห้ามใส่ fact ที่ไม่มีใน brief**
+4. `src/footage.py:fetch_multiple_clips` — Pexels 1 clip ต่อประโยค
+5. `src/tts.py:generate_voiceover` — Gemini TTS → edge-tts Premwadee → gTTS (ดูหัวข้อ Voice)
+6. `main.py:_sync_th_subs` — silencedetect → TTS boundaries → Whisper → script split
+7. `src/editor.py:create_short` — ffmpeg ASS karaoke 2-pass, Kanit, hook pop 0-2.6 วิ, reveal flash, end card
+8. `src/thumbnail.py` — Pollinations flux-pro → clip frame → Pexels → video frame
+9. `src/uploader.py:upload_youtube` — Data API v3 + `publish_at`
+
+**ห้ามรวม tools กับ `response_mime_type=application/json` ใน call เดียว** — Gemini
+ตอบ 400 `Tool use with a response mime type: 'application/json' is unsupported`.
+นี่คือเหตุผลที่ research (grounded, plain text) กับ script (JSON, ไม่มี tool) แยกกัน.
+
+## Voice
+
+`src/tts_gemini.py` เป็น path หลักของไทย — `gemini-3.1-flash-tts-preview` voice `Leda`,
+**1 call ต่อคลิป** (ไม่ใช่ต่อประโยค) เพราะ preview model quota แคบและ 503 บ่อย.
+
+per-sentence timing ได้จาก silencedetect หลัง render โดยแทรก `" ??? \n"` คั่นบรรทัด.
+ตัวเลขที่วัดจริงจากสคริปต์ 10 บรรทัด:
+
+| separator | ช่องว่างระหว่างบรรทัด | ความยาวรวม | gap ที่ detect ได้ |
+|---|---|---|---|
+| ไม่มี | 0.3-0.5 วิ ปนกับจังหวะกลางประโยค | 57 วิ | 27 (ต้องการ 9) |
+| `...` | 2.2-2.7 วิ (dead air) | 59 วิ | 9 |
+| `???` | 0.63-0.85 วิ | 44 วิ | 9 |
+
+fallback: Gemini fail → edge-tts Premwadee per-sentence → gTTS. ปิด Gemini TTS
+ด้วย `GEMINI_TTS_DISABLED=1`. เสียงพากย์ ~4.4 วิ/ประโยค รวมจังหวะหยุด.
 
 ## Thai Subtitle Logic (sensitive)
 
@@ -58,16 +94,18 @@ Trending TH uses **TTS boundary timing** if coverage ≥70%, else falls back to 
 ```powershell
 $env:PYTHONIOENCODING="utf-8"
 
-# One-off test
-python test_trending.py
-python test_chaos.py
+# Render 1 คลิปเต็ม ไม่ queue ไม่ upload — ใช้ตรวจ prompt/voice/subtitle
+python test_explainer.py
+python test_explainer.py --no-trends   # ข้ามเทรนด์ ใช้ evergreen bucket
 
-# Batch generate N pairs (default 3 = 6 videos)
+# Generate + upload จริง (default 1 คลิป)
 python generate_batch.py [N]
 
-# Long-running uploader (run separately, ทิ้งไว้)
-python scheduler.py
+# Generate ครบทุกขั้นแต่ไม่แตะ YouTube/Notion
+$env:DRY_RUN="1"; python generate_batch.py 1
 ```
+
+`scheduler.py` = legacy ไม่ต้องรัน (ยังอ้าง `generate_one_pair` ที่ลบไปแล้ว).
 
 ## Env / Secrets
 
@@ -89,15 +127,15 @@ python scheduler.py
 
 ## Constraints
 
-- Vertical 9:16 (1080x1920), <60 sec, H.264 + AAC
-- ภาษา EN + TH ต่อ video (pair = 2 ไฟล์ใช้ฉาก/audio คนละชุดอิสระ)
-- Font EN = Impact (bundled `Kanit-Bold.ttf` for TH)
+- Vertical 9:16 (1080x1920), 45-60 วิ, H.264 + AAC. cap ใน `editor.py` = 62 วิ
+- ไทยอย่างเดียว 1 ไฟล์ต่อวัน
+- Font ไทย = bundled `Kanit-Bold.ttf` (thumbnail ใช้ตัวนี้ด้วย — Impact ไม่มี glyph ไทย)
 - ห้าม hardcode API key
 
 ## What NOT to Do
 
 - อย่าเปลี่ยน Whisper text → subtitle text (มันเพี้ยน — ใช้ script text, Whisper timing เท่านั้น)
-- อย่าลบ `_subs_from_sentences()` fallback — trending TH กลับมาใช้เมื่อ TTS boundary coverage <70%
-- อย่า refactor `SLOT_STYLES` map ก่อนถาม — workflow + scheduler ผูกกับ hour key
-- อย่ารวม EN+TH เป็นวิดีโอเดียว — pair = 2 ไฟล์อิสระ ใช้คนละ voiceover/clip/thumbnail
+- อย่าลบ `_subs_from_sentences()` fallback — ใช้เมื่อ silencedetect กับ TTS boundary ไม่พอ
+- **อย่าเปิด `title_card` / `outro_card` กลับมาสำหรับ explainer** — title card = ภาพนิ่งเงียบ 0.8 วิ ก่อน hook (ช่วงที่คนตัดสินใจปัด), outro card = จอดำ 1.5 วิ ที่ตัด loop กลับต้นคลิปทิ้ง
+- อย่าให้ generator แต่ง fact เอง — ทุกอย่างต้องมาจาก `Brief` ที่ ground แล้ว เทรนด์ส่วนใหญ่เกิดหลัง training cutoff
 - `project-brief.md` = historical artifact (2026-05-08), ไม่ใช่ current state — ใช้ไฟล์นี้แทน
