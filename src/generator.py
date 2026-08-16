@@ -321,8 +321,7 @@ _EXPLAINER_SCHEMA = """<output_schema>
       "text_th":   "หนึ่งประโยคพูด 8-14 คำ",
       "keyword":   "english pexels video search term for this exact moment",
       "fallback":  "one or two word backup",
-      "ai_prompt": "ใส่เฉพาะประโยคที่ stock footage ทำไม่ได้ (ดู ai_prompt_rules) นอกนั้นเว้นเป็นสตริงว่าง",
-      "emphasis":  ["คำในประโยคนี้ที่แบกข้อมูล ดู emphasis_rules"]
+      "ai_prompt": "ใส่เฉพาะประโยคที่ stock footage ทำไม่ได้ (ดู ai_prompt_rules) นอกนั้นเว้นเป็นสตริงว่าง"
     }
   ],
   "entities":       [{"name": "ชื่อภาษาอังกฤษสำหรับค้น Wikipedia", "sentence_idx": 0}],
@@ -333,20 +332,6 @@ _EXPLAINER_SCHEMA = """<output_schema>
   "thumbnail_prompt":  "english AI image prompt — cinematic, ultra realistic, high contrast, one hero subject filling the frame, no text"
 }
 </output_schema>
-
-<emphasis_rules>
-emphasis = คำในประโยคที่จะถูกไฮไลต์ด้วยกล่องสีบนซับ คนเลื่อนผ่านแบบปิดเสียง
-ต้องกวาดตาเห็นคำพวกนี้แล้วเข้าใจว่าคลิปพูดเรื่องอะไร
-
-ใส่ 0-2 คำต่อประโยค ไม่ต้องมีทุกประโยค เลือกเฉพาะ:
-- ปี ตัวเลข จำนวน (เช่น "สองพันยี่สิบสาม", "เก้าล้านคน")
-- ชื่อคน ชื่อองค์กร ชื่อสถานที่
-- คำที่เป็นจุดหักมุมของประโยคนั้น
-
-ต้องเป็นข้อความที่ปรากฏใน text_th ของประโยคนั้นแบบตรงตัวเป๊ะๆ
-ห้ามไฮไลต์คำเชื่อมหรือคำทั่วไป (ที่ ของ แล้ว มัน เป็น ก็ นะ)
-ประโยคไหนไม่มีคำที่คู่ควร ใส่ array ว่าง
-</emphasis_rules>
 
 <ai_prompt_rules>
 ใส่ ai_prompt ให้ 4-5 ประโยค ที่เหลือเว้นเป็น ""
@@ -441,16 +426,6 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
             data[key] = _clean_thai(data[key])
     for s in sentences:
         s["text_th"] = _clean_thai(s.get("text_th", ""))
-
-    # Flattened for the subtitle builder, which matches tokens against the
-    # whole set rather than per sentence -- a Thai token that collides
-    # across two sentences is a highlight in both, which is harmless.
-    data["emphasis"] = {
-        _clean_thai(phrase)
-        for s in sentences
-        for phrase in (s.get("emphasis") or [])
-        if phrase and len(_clean_thai(phrase)) >= 2
-    }
 
     data["category"]     = brief.topic
     data["brief_source"] = brief.source

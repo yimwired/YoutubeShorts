@@ -27,48 +27,75 @@ def _best_portrait_file(video: dict) -> str | None:
     return best
 
 
-def _pexels(keyword: str, output_path: str,
-            used_ids: set | None = None) -> str | None:
-    """Download the most relevant unused portrait clip for `keyword`.
+# How far down the relevance ranking we are willing to look before
+# preferring a fresher clip. Wide enough that the newest of the genuinely
+# relevant results wins; narrow enough that relevance still decides.
+_RELEVANCE_WINDOW = 4
 
-    Pexels already returns results ordered by relevance to the query, and
-    that ordering is the only signal we have about whether a clip matches
-    what the sentence is saying. An earlier version re-sorted the results
-    by resolution, which meant a 4K clip of something unrelated always beat
-    the 720p clip that was actually on topic -- the reason videos kept
-    drifting off theme. Resolution now only picks between renditions of the
-    same video, never between videos.
 
-    `used_ids` is mutated with whatever gets taken, so the caller can keep
-    one clip from appearing twice in a single video.
-    """
+def _search_pexels(keyword: str, size: str | None) -> list[dict]:
     headers = {"Authorization": PEXELS_KEY}
-    params  = {"query": keyword, "per_page": 15, "orientation": "portrait"}
+    params  = {"query": keyword, "per_page": 20, "orientation": "portrait"}
+    if size:
+        params["size"] = size
     try:
         resp = requests.get("https://api.pexels.com/videos/search",
                             headers=headers, params=params, timeout=15)
     except Exception:
-        return None
+        return []
     record("pexels")
     if resp.status_code != 200:
-        return None
+        return []
+    return resp.json().get("videos", [])
 
-    for video in resp.json().get("videos", []):        # relevance order
-        vid_id = video.get("id")
-        if used_ids is not None and vid_id in used_ids:
-            continue
-        if video.get("duration", 0) < 5:               # too short to cut into
-            continue
-        link = _best_portrait_file(video)
-        if not link:
-            continue
-        try:
-            path = _download(link, output_path)
-        except Exception:
-            continue
-        if used_ids is not None:
-            used_ids.add(vid_id)
-        return path
+
+def _pexels(keyword: str, output_path: str,
+            used_ids: set | None = None) -> str | None:
+    """Download a relevant, reasonably recent portrait clip for `keyword`.
+
+    Two signals, in this order:
+
+    Relevance. Pexels returns results ordered by match to the query, and
+    that ordering is the only relevance information available. An earlier
+    version re-sorted by resolution, so a 4K clip of something unrelated
+    beat the 720p clip that was on topic every time -- the reason videos
+    kept drifting off theme. Only the top few results are considered.
+
+    Recency. Pexels has no sort-by-date, but ids increase with upload
+    time, so the highest id inside the relevance window is the newest of
+    the clips that actually match. Combined with size=medium (Full HD
+    floor) this keeps the soft, grainy, 2015-era uploads out.
+
+    Falls back to an unfiltered search when the HD floor leaves nothing --
+    niche queries sometimes have only a handful of portrait clips at all.
+
+    `used_ids` is mutated with whatever gets taken, so one clip cannot
+    appear twice in a single video.
+    """
+    for size in ("medium", None):
+        candidates = []
+        for video in _search_pexels(keyword, size):     # relevance order
+            vid_id = video.get("id")
+            if used_ids is not None and vid_id in used_ids:
+                continue
+            if video.get("duration", 0) < 5:            # too short to cut into
+                continue
+            if not _best_portrait_file(video):
+                continue
+            candidates.append(video)
+            if len(candidates) >= _RELEVANCE_WINDOW:
+                break
+
+        # Newest among the most relevant, then next-newest if it won't download.
+        for video in sorted(candidates, key=lambda v: v.get("id", 0),
+                            reverse=True):
+            try:
+                path = _download(_best_portrait_file(video), output_path)
+            except Exception:
+                continue
+            if used_ids is not None:
+                used_ids.add(video.get("id"))
+            return path
     return None
 
 

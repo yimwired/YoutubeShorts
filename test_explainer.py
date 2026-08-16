@@ -90,7 +90,6 @@ def main() -> int:
                        hook_text=data.get("hook_th"),
                        loop_text=data.get("loop_th"),
                        cta_text=data.get("cta_th"),
-                       emphasis=data.get("emphasis"),
                        title_card=False, outro_card=False)
 
     test_path = os.path.join(OUTPUT_DIR, f"test_explainer_{timestamp}.mp4")

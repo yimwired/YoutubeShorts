@@ -50,39 +50,10 @@ def _to_ass_time(s: float) -> str:
     return f"{int(h)}:{int(m):02d}:{sec:05.2f}"
 
 
-# Highlight plate drawn behind an emphasised word.
-#
-# ASS cannot put a background box behind part of a line -- BorderStyle=3
-# applies to the whole event. A very thick outline in the accent colour
-# fills the gaps between glyphs and reads as a highlighter swipe, which is
-# the effect we actually want, and it composes per-word via inline tags.
-_EMPHASIS_TAG = r"{\bord16\3c&H0000E0FF&\1c&H00202020&\shad0}"
-_EMPHASIS_END = r"{\r}"
-
-
-def _emphasis_match(token: str, phrases: set) -> bool:
-    """Is this token part of a phrase the writer marked as emphatic?
-
-    Tokens arrive already split by the Thai tokenizer, so a two-word phrase
-    like "นักโทษ อังกฤษ" reaches here as two tokens; matching on
-    containment highlights both. Single characters are skipped -- they
-    collide with everything.
-    """
-    if len(token) < 2:
-        return False
-    return any(token in phrase for phrase in phrases)
-
-
-def _make_thai_ass(words: list, ass_path: str, style: str = "trending",
-                   emphasis: set | None = None):
+def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
     """Build ASS karaoke file: one line per sentence with word-level highlight sweep.
     Sentence breaks come from `break_after` flag (set by _subs_from_sentences);
-    pause-based and word-count splits act as fallbacks for legacy inputs.
-
-    `emphasis` holds phrases the scriptwriter flagged as the words carrying
-    the fact -- years, names, the reveal. Those get a highlighter plate so
-    the eye lands on them while skimming with sound off."""
-    emphasis = emphasis or set()
+    pause-based and word-count splits act as fallbacks for legacy inputs."""
     is_narrative = style == "narrative"
     pause_threshold = 0.6 if is_narrative else 0.45
     max_words = 999  # whole sentence stays on one line
@@ -118,13 +89,7 @@ def _make_thai_ass(words: list, ass_path: str, style: str = "trending",
                 if max_chars < 999 and line_len + len(text) > max_chars and line_len > 0:
                     karaoke += r"\N"
                     line_len = 0
-                if _emphasis_match(text, emphasis):
-                    # \r after the word restores the Default style, so the
-                    # plate does not bleed into the rest of the line.
-                    karaoke += (f"{{\\kf{dur_cs}}}{_EMPHASIS_TAG}{text}"
-                                f"{_EMPHASIS_END}")
-                else:
-                    karaoke += f"{{\\kf{dur_cs}}}{text}"
+                karaoke += f"{{\\kf{dur_cs}}}{text}"
                 line_len += len(text)
 
             f.write(f'Dialogue: 0,{start},{end},Default,,0,0,0,,{{\\pos(540,1080)}}{karaoke}\n')
@@ -489,8 +454,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
                  entity_overlays: list[dict] = None,
                  hook_text: str = None,
                  loop_text: str = None,
-                 cta_text: str = None,
-                 emphasis: set = None) -> str:
+                 cta_text: str = None) -> str:
 
     # 58s was sized for the old ~30s scripts plus a title and outro card.
     # The explainer format targets 45-60s of speech with no cards, so the
@@ -728,8 +692,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
         pass1 = output_path.replace(".mp4", "_pass1.mp4")
         os.rename(output_path, pass1)
         try:
-            _make_thai_ass(words, ass_file.name, style=content_style,
-                           emphasis=emphasis)
+            _make_thai_ass(words, ass_file.name, style=content_style)
             _burn_ass(pass1, ass_file.name, output_path)
         finally:
             if os.path.exists(pass1):

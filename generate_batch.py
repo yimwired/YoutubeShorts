@@ -294,7 +294,6 @@ def generate_one(index: int, publish_at: str) -> None:
                           entity_overlays=overlays,
                           hook_text=hook_th, loop_text=loop_th,
                           cta_text=cta_th,
-                          emphasis=data.get("emphasis"),
                           title_card=False, outro_card=False)
 
     # Lead the description with the comment-bait question: it is the first

@@ -408,7 +408,6 @@ def make_video(clips: list[str], audio_path: str, title: str,
                hook_text: str = None,
                loop_text: str = None,
                cta_text: str = None,
-               emphasis: set = None,
                title_card: bool = True,
                outro_card: bool = True) -> str:
     """Render one finished short.
@@ -426,8 +425,7 @@ def make_video(clips: list[str], audio_path: str, title: str,
                  words=words, clips=clips, lang=lang, music_path=music,
                  cut_times=cut_times, content_style=content_style,
                  entity_overlays=entity_overlays,
-                 hook_text=hook_text, loop_text=loop_text, cta_text=cta_text,
-                 emphasis=emphasis)
+                 hook_text=hook_text, loop_text=loop_text, cta_text=cta_text)
     if title_card and thumb_path and os.path.exists(thumb_path):
         print(f"  [{lang.upper()}] Adding title card...")
         prepend_title_card(final_path, thumb_path, title, lang)
