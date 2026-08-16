@@ -11,6 +11,13 @@ LIMITS = {
     "groq":    {"daily":  14400},  # ~10 req/min free tier
 }
 
+# Estimated USD per call, for the services that are actually billed.
+# Gemini TTS is $10 per 1M output tokens at 25 tokens per second of audio,
+# so a ~50s voiceover is 1250 tokens ~= $0.0125. One call per video.
+COST_PER_CALL = {
+    "gemini_tts": 0.0125,
+}
+
 
 def _load() -> dict:
     if os.path.exists(TRACK_FILE):
@@ -59,11 +66,25 @@ def summary() -> str:
     today = str(date.today())
     month = today[:7]
     lines = ["--- API Usage ---"]
-    for svc, info in data.items():
+    month_cost = 0.0
+    for svc, info in sorted(data.items()):
         d = info.get("daily", {}).get(today, 0)
         m = info.get("monthly", {}).get(month, 0)
         lim = LIMITS.get(svc, {})
         d_lim = lim.get("daily", lim.get("hourly", "?"))
         m_lim = lim.get("monthly", "?")
-        lines.append(f"  {svc:10} today={d}/{d_lim}  month={m}/{m_lim}")
+        line = f"  {svc:12} today={d}/{d_lim}  month={m}/{m_lim}"
+        rate = COST_PER_CALL.get(svc)
+        if rate:
+            cost = m * rate
+            month_cost += cost
+            line += f"  ~${cost:.2f} this month"
+        lines.append(line)
+    lines.append(f"  {'':12} estimated spend {month}: ~${month_cost:.2f}")
     return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8")
+    print(summary())

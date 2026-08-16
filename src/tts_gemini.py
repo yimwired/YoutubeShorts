@@ -21,6 +21,8 @@ import tempfile
 import time
 import wave
 
+from src.rate_tracker import record
+
 _MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
 _VOICE = os.getenv("GEMINI_TTS_VOICE", "Leda")
 
@@ -86,6 +88,10 @@ def _synthesize(text: str) -> bytes | None:
         try:
             resp = client.models.generate_content(
                 model=_MODEL, contents=_STYLE + text, config=config)
+            # Tracked separately from the text models: this is the only
+            # call in the pipeline that is actually billed, so it is the
+            # one worth watching in rate_usage.json.
+            record("gemini_tts")
             return resp.candidates[0].content.parts[0].inline_data.data
         except Exception as e:
             name = type(e).__name__
