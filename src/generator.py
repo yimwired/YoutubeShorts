@@ -226,21 +226,42 @@ def _clean_thai(text: str) -> str:
 
 
 def _parse_json(raw: str) -> dict:
-    """Parse an LLM JSON reply that may be fenced or carry stray control chars.
+    """Parse an LLM JSON reply, repairing the ways models break JSON.
 
-    strict=False tolerates raw newlines/tabs inside string values, which
-    Groq emits fairly often in Thai content.
+    Three passes, each strictly more forgiving than the last:
+      1. as-is, with strict=False so raw newlines and tabs inside string
+         values pass (Groq emits those regularly in Thai content)
+      2. minus stray control characters
+      3. minus trailing commas before a closing brace or bracket, which is
+         what a long nested schema tends to produce once the model starts
+         dropping optional fields
+
+    Raises the last decode error with the offending text attached, so a
+    failure in production says what actually came back.
     """
     raw = raw.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    try:
-        return json.loads(raw.strip(), strict=False)
-    except json.JSONDecodeError:
-        cleaned = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw.strip())
-        return json.loads(cleaned, strict=False)
+    raw = raw.strip()
+
+    attempts = [
+        raw,
+        _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw),
+        _re.sub(r',(\s*[}\]])', r'\1',
+                _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)),
+    ]
+    last_error = None
+    for candidate in attempts:
+        try:
+            return json.loads(candidate, strict=False)
+        except json.JSONDecodeError as e:
+            last_error = e
+
+    print(f"[generator] JSON parse failed: {last_error}")
+    print(f"[generator] raw response was:\n{raw[:1500]}")
+    raise last_error
 
 
 _CATEGORIES = [
@@ -300,7 +321,8 @@ _EXPLAINER_SCHEMA = """<output_schema>
       "text_th":   "หนึ่งประโยคพูด 8-14 คำ",
       "keyword":   "english pexels video search term for this exact moment",
       "fallback":  "one or two word backup",
-      "ai_prompt": "ใส่เฉพาะประโยคที่ stock footage ทำไม่ได้ (ดู ai_prompt_rules) นอกนั้นเว้นเป็นสตริงว่าง"
+      "ai_prompt": "ใส่เฉพาะประโยคที่ stock footage ทำไม่ได้ (ดู ai_prompt_rules) นอกนั้นเว้นเป็นสตริงว่าง",
+      "emphasis":  ["คำในประโยคนี้ที่แบกข้อมูล ดู emphasis_rules"]
     }
   ],
   "entities":       [{"name": "ชื่อภาษาอังกฤษสำหรับค้น Wikipedia", "sentence_idx": 0}],
@@ -312,11 +334,27 @@ _EXPLAINER_SCHEMA = """<output_schema>
 }
 </output_schema>
 
+<emphasis_rules>
+emphasis = คำในประโยคที่จะถูกไฮไลต์ด้วยกล่องสีบนซับ คนเลื่อนผ่านแบบปิดเสียง
+ต้องกวาดตาเห็นคำพวกนี้แล้วเข้าใจว่าคลิปพูดเรื่องอะไร
+
+ใส่ 0-2 คำต่อประโยค ไม่ต้องมีทุกประโยค เลือกเฉพาะ:
+- ปี ตัวเลข จำนวน (เช่น "สองพันยี่สิบสาม", "เก้าล้านคน")
+- ชื่อคน ชื่อองค์กร ชื่อสถานที่
+- คำที่เป็นจุดหักมุมของประโยคนั้น
+
+ต้องเป็นข้อความที่ปรากฏใน text_th ของประโยคนั้นแบบตรงตัวเป๊ะๆ
+ห้ามไฮไลต์คำเชื่อมหรือคำทั่วไป (ที่ ของ แล้ว มัน เป็น ก็ นะ)
+ประโยคไหนไม่มีคำที่คู่ควร ใส่ array ว่าง
+</emphasis_rules>
+
 <ai_prompt_rules>
-ใส่ ai_prompt ให้ 2-3 ประโยคเท่านั้น ที่เหลือเว้นเป็น ""
-เลือกประโยคที่ stock footage หาไม่ได้จริงๆ ปกติคือ:
-- ประโยค ORIGIN ที่เป็นเหตุการณ์เฉพาะเจาะจงในอดีต (คนนี้ ปีนี้ ที่นี่)
+ใส่ ai_prompt ให้ 4-5 ประโยค ที่เหลือเว้นเป็น ""
+เลือกประโยคที่ stock footage หาไม่ได้จริงๆ เรียงตามความสำคัญ:
+- ประโยค ORIGIN ทุกประโยคที่เป็นเหตุการณ์เฉพาะเจาะจงในอดีต (คนนี้ ปีนี้ ที่นี่)
+  stock ไม่มีทางมีภาพยุคนั้น มันจะให้ภาพปัจจุบันมาแทนแล้วผิดยุคทันที
 - ประโยค REVEAL ที่เป็นจุดเฉลย
+- ประโยคที่พูดถึงคน องค์กร หรือของเฉพาะเจาะจงที่หาคลิปจริงไม่ได้
 ai_prompt เขียนเป็นภาษาอังกฤษ บรรยายภาพเดียวที่เห็นได้จริง:
 ใคร ทำอะไร ที่ไหน ยุคไหน แสงแบบไหน
 ตัวอย่างดี: "1886 Atlanta pharmacy, bearded pharmacist pouring dark syrup
@@ -360,13 +398,33 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
         + _EXPLAINER_SCHEMA
     )
 
-    # flash, not flash-lite: this call has to hold a 6-field brief, a
-    # 15-sentence structure and a no-invention rule at the same time,
-    # and lite drifts on the sourcing rule first.
-    raw = _llm_call([
+    messages = [
         {"role": "system", "content": SYSTEM_PROMPT_EXPLAINER},
         {"role": "user",   "content": prompt},
-    ], max_tokens=12000, model="gemini-2.5-flash", thinking_budget=2048)
+    ]
+
+    # flash first: this call has to hold a 6-field brief, a 12-sentence
+    # structure and a no-invention rule at the same time, and lite drifts on
+    # the sourcing rule first. But flash's free tier is 20 requests a day
+    # for the whole project, so lite has to be able to take over -- a weaker
+    # script beats no video.
+    #
+    # _call_gemini directly rather than _llm_call: the latter swallows a
+    # Gemini failure and answers from Groq, which would make the lite
+    # attempt unreachable. Groq stays as the final fallback below.
+    raw = None
+    if _GEMINI_AVAILABLE:
+        for model in ("gemini-2.5-flash", "gemini-2.5-flash-lite"):
+            try:
+                raw = _call_gemini(messages, max_tokens=12000, model=model,
+                                   thinking_budget=2048)
+                break
+            except Exception as e:
+                print(f"[generator] {model} failed: {type(e).__name__}: "
+                      f"{str(e)[:140]}")
+    if raw is None:
+        print("[generator] falling back to Groq for the script")
+        raw = _call_groq(messages, max_tokens=6000)
 
     data = _parse_json(raw)
 
@@ -383,6 +441,16 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
             data[key] = _clean_thai(data[key])
     for s in sentences:
         s["text_th"] = _clean_thai(s.get("text_th", ""))
+
+    # Flattened for the subtitle builder, which matches tokens against the
+    # whole set rather than per sentence -- a Thai token that collides
+    # across two sentences is a highlight in both, which is harmless.
+    data["emphasis"] = {
+        _clean_thai(phrase)
+        for s in sentences
+        for phrase in (s.get("emphasis") or [])
+        if phrase and len(_clean_thai(phrase)) >= 2
+    }
 
     data["category"]     = brief.topic
     data["brief_source"] = brief.source

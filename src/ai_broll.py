@@ -97,17 +97,30 @@ def replace_with_ai_clips(clips: list[str], sentences: list[dict],
     fails to generate silently keeps its stock clip -- a plain video beats
     a missing one.
     """
-    out = list(clips)
+    out  = list(clips)
+    made: dict[str, str] = {}
     for i, sentence in enumerate(sentences):
         if i >= len(out):
             break
         prompt = (sentence.get("ai_prompt") or "").strip()
         if not prompt:
             continue
+
+        # Writers reuse the same prompt across adjacent sentences often
+        # enough to matter -- generating it twice costs a minute and puts
+        # two near-identical shots back to back. Render once, reuse the
+        # clip; the editor cuts a different window out of it per segment.
+        if prompt in made:
+            out[i] = made[prompt]
+            print(f"    [ai-broll] sentence {i} reuses "
+                  f"{os.path.basename(made[prompt])}")
+            continue
+
         print(f"    [ai-broll] sentence {i}: {prompt[:60]}")
         clip = make_clip(prompt, out_dir, f"{timestamp}_{i}",
                          seed=(timestamp + i * 7919) % 99999)
         if clip:
-            out[i] = clip
+            out[i]       = clip
+            made[prompt] = clip
             print(f"    [ai-broll] sentence {i} → {os.path.basename(clip)}")
     return out

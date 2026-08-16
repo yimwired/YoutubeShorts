@@ -50,10 +50,39 @@ def _to_ass_time(s: float) -> str:
     return f"{int(h)}:{int(m):02d}:{sec:05.2f}"
 
 
-def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
+# Highlight plate drawn behind an emphasised word.
+#
+# ASS cannot put a background box behind part of a line -- BorderStyle=3
+# applies to the whole event. A very thick outline in the accent colour
+# fills the gaps between glyphs and reads as a highlighter swipe, which is
+# the effect we actually want, and it composes per-word via inline tags.
+_EMPHASIS_TAG = r"{\bord16\3c&H0000E0FF&\1c&H00202020&\shad0}"
+_EMPHASIS_END = r"{\r}"
+
+
+def _emphasis_match(token: str, phrases: set) -> bool:
+    """Is this token part of a phrase the writer marked as emphatic?
+
+    Tokens arrive already split by the Thai tokenizer, so a two-word phrase
+    like "นักโทษ อังกฤษ" reaches here as two tokens; matching on
+    containment highlights both. Single characters are skipped -- they
+    collide with everything.
+    """
+    if len(token) < 2:
+        return False
+    return any(token in phrase for phrase in phrases)
+
+
+def _make_thai_ass(words: list, ass_path: str, style: str = "trending",
+                   emphasis: set | None = None):
     """Build ASS karaoke file: one line per sentence with word-level highlight sweep.
     Sentence breaks come from `break_after` flag (set by _subs_from_sentences);
-    pause-based and word-count splits act as fallbacks for legacy inputs."""
+    pause-based and word-count splits act as fallbacks for legacy inputs.
+
+    `emphasis` holds phrases the scriptwriter flagged as the words carrying
+    the fact -- years, names, the reveal. Those get a highlighter plate so
+    the eye lands on them while skimming with sound off."""
+    emphasis = emphasis or set()
     is_narrative = style == "narrative"
     pause_threshold = 0.6 if is_narrative else 0.45
     max_words = 999  # whole sentence stays on one line
@@ -89,7 +118,13 @@ def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
                 if max_chars < 999 and line_len + len(text) > max_chars and line_len > 0:
                     karaoke += r"\N"
                     line_len = 0
-                karaoke += f"{{\\kf{dur_cs}}}{text}"
+                if _emphasis_match(text, emphasis):
+                    # \r after the word restores the Default style, so the
+                    # plate does not bleed into the rest of the line.
+                    karaoke += (f"{{\\kf{dur_cs}}}{_EMPHASIS_TAG}{text}"
+                                f"{_EMPHASIS_END}")
+                else:
+                    karaoke += f"{{\\kf{dur_cs}}}{text}"
                 line_len += len(text)
 
             f.write(f'Dialogue: 0,{start},{end},Default,,0,0,0,,{{\\pos(540,1080)}}{karaoke}\n')
@@ -306,10 +341,29 @@ _HOOK_COLORS = {"trending": "#FFE000", "chaos": "#FF2EA0",
 _HOOK_END = 2.6
 
 
+# Hooks longer than this cannot be shown on one line at a readable size.
+# drawtext does not wrap, so an over-long hook would run off both edges of
+# the frame -- the weaker model sometimes ignores the length rule in the
+# schema, and a silently clipped hook is worse than a trimmed one.
+_HOOK_MAX_CHARS = 30
+
+
 def _hook_size(text: str) -> int:
     """Pick a fontsize that keeps the hook on one line at 1080 wide."""
     n = len(text)
-    return 132 if n <= 12 else 108 if n <= 18 else 88 if n <= 26 else 72
+    return 132 if n <= 12 else 108 if n <= 18 else 88 if n <= 26 else 68
+
+
+def _fit_hook(text: str) -> str:
+    """Trim an over-long hook at a word boundary so it still reads."""
+    text = text.strip()
+    if len(text) <= _HOOK_MAX_CHARS:
+        return text
+    cut = text[:_HOOK_MAX_CHARS]
+    if " " in cut:
+        cut = cut[:cut.rfind(" ")]
+    print(f"  [hook] trimmed {len(text)} chars to {len(cut)}: {cut}")
+    return cut.rstrip(" ,.!?")
 
 
 def _hook_overlay(style: str, lang: str, text: str = None) -> list[str]:
@@ -334,6 +388,7 @@ def _hook_overlay(style: str, lang: str, text: str = None) -> list[str]:
     color = _HOOK_COLORS.get(style, _HOOK_COLORS["trending"])
     if text and text.strip():
         disp = text.strip().upper() if lang == "en" else text.strip()
+        disp = _fit_hook(disp)
     else:
         fb   = FALLBACK.get(style, FALLBACK["trending"])
         disp = fb["en"] if lang == "en" else fb["th"]
@@ -434,7 +489,8 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
                  entity_overlays: list[dict] = None,
                  hook_text: str = None,
                  loop_text: str = None,
-                 cta_text: str = None) -> str:
+                 cta_text: str = None,
+                 emphasis: set = None) -> str:
 
     # 58s was sized for the old ~30s scripts plus a title and outro card.
     # The explainer format targets 45-60s of speech with no cards, so the
@@ -672,7 +728,8 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
         pass1 = output_path.replace(".mp4", "_pass1.mp4")
         os.rename(output_path, pass1)
         try:
-            _make_thai_ass(words, ass_file.name, style=content_style)
+            _make_thai_ass(words, ass_file.name, style=content_style,
+                           emphasis=emphasis)
             _burn_ass(pass1, ass_file.name, output_path)
         finally:
             if os.path.exists(pass1):

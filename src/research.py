@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from dataclasses import dataclass
 
 try:
@@ -33,10 +34,20 @@ except ImportError:
 
 from src.rate_tracker import record
 
-# Flash, not flash-lite: the lite tier is noticeably worse at holding a
-# grounded answer to its sources, and this is the step where a
-# hallucinated year or name would ship straight into a video.
-_MODEL = "gemini-2.5-flash"
+# Flash first: the lite tier is noticeably worse at holding a grounded
+# answer to its sources, and this is the step where a hallucinated year or
+# name would ship straight into a video.
+#
+# Lite second because flash's free tier is only 20 requests per day per
+# project (GenerateRequestsPerDayPerProjectPerModel-FreeTier). The daily
+# run needs two, so a couple of manual test runs are enough to exhaust it,
+# and without a second model a 429 at 06:00 means no video that day.
+_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+
+# 429 responses carry retryDelay ~20s (per-minute window). Waiting it out
+# is worth it for a job that runs once a day.
+_RETRIES = 3
+_BACKOFF = 22
 
 # What makes a topic wrong for this format, stated once and reused by
 # both prompts so the two paths reject the same things.
@@ -86,24 +97,45 @@ class Brief:
 
 
 def _grounded(prompt: str, temperature: float = 0.4) -> str | None:
+    """Search-grounded completion, retried across models before giving up.
+
+    Returning None here costs the whole day's video, so this leans hard on
+    retrying: each model gets a few attempts with a pause long enough to
+    clear a per-minute quota window, then the next model takes over.
+    """
     if _CLIENT is None:
         print("  [research] no GEMINI_API_KEY — skipping grounded research")
         return None
-    try:
-        resp = _CLIENT.models.generate_content(
-            model=_MODEL,
-            contents=prompt,
-            config=genai_types.GenerateContentConfig(
-                tools=[genai_types.Tool(
-                    google_search=genai_types.GoogleSearch())],
-                temperature=temperature,
-            ),
-        )
-        record("gemini")
-        return (resp.text or "").strip() or None
-    except Exception as e:
-        print(f"  [research] grounded call failed: {type(e).__name__}: {e}")
-        return None
+
+    config = genai_types.GenerateContentConfig(
+        tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
+        temperature=temperature,
+    )
+
+    for model in _MODELS:
+        for attempt in range(1, _RETRIES + 1):
+            try:
+                resp = _CLIENT.models.generate_content(
+                    model=model, contents=prompt, config=config)
+                record("gemini")
+                text = (resp.text or "").strip()
+                if text:
+                    return text
+                print(f"  [research] {model} returned empty text")
+                break            # empty is not a rate problem; change model
+            except Exception as e:
+                is_quota = "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e)
+                label    = f"{type(e).__name__}"
+                if is_quota and attempt < _RETRIES:
+                    print(f"  [research] {model} quota hit — retry "
+                          f"{attempt}/{_RETRIES - 1} in {_BACKOFF}s")
+                    time.sleep(_BACKOFF)
+                    continue
+                print(f"  [research] {model} failed: {label}: {str(e)[:160]}")
+                break            # out of retries, or a non-quota error
+        if model != _MODELS[-1]:
+            print(f"  [research] falling back to {_MODELS[_MODELS.index(model) + 1]}")
+    return None
 
 
 def _parse_brief(text: str, source: str) -> Brief | None:
