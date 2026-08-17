@@ -20,7 +20,7 @@
   "video_path": "output/short_1786750513_en.mp4",
   "thumb_path": "output/thumb_1786750513_en.jpg",
   "thumb_path_b": "output/thumb_1786750513_en_b.jpg",
-  "ab_swapped": false,
+  "ab_swapped": true,
   "publish_at": "2026-08-15T12:00:00+07:00",
   "notion_page_id": "3bc316f48149815a8491edd6248976f7",
   "created_at": "2026-08-15T06:40:26.745287+07:00",
@@ -28,5 +28,10 @@
   "youtube_url": "https://youtu.be/XKn2cG0at3Q",
   "youtube_video_id": "XKn2cG0at3Q",
   "tiktok_url": null,
-  "uploaded_at": "2026-08-15T06:40:38.771411+07:00"
+  "uploaded_at": "2026-08-15T06:40:38.771411+07:00",
+  "ab_swap_at": "2026-08-18T02:25:50.406374+07:00",
+  "ab_swap_why": "views 9 < 40% of median 46; retention 0.0% < 45.0%",
+  "analytics_at": "2026-08-18T02:25:50.406395+07:00",
+  "last_views": 9,
+  "last_retention": 0.0
 }
