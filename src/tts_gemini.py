@@ -24,7 +24,49 @@ import wave
 from src.rate_tracker import record
 
 _MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
-_VOICE = os.getenv("GEMINI_TTS_VOICE", "Leda")
+
+# Rotation pool, alternating perceived gender so consecutive days do not
+# sound like the same narrator. Google publishes a one-word character for
+# each voice but no gender, so the ordering here is by ear -- rerun
+# tools/voice_samples.py to re-audition and reorder.
+#
+# Order matters: the pool is walked in sequence, one step per video, so
+# male and female must alternate down the list for the alternation to hold.
+VOICE_POOL = [
+    ("Charon",   "informative"),
+    ("Leda",     "youthful"),
+    ("Orus",     "firm"),
+    ("Aoede",    "breezy"),
+    ("Achird",   "friendly"),
+    ("Sulafat",  "warm"),
+]
+
+_VOICE_STATE_FILE = "voice_state.json"
+
+
+def _next_voice() -> str:
+    """Next voice in the rotation, advancing the persisted cursor.
+
+    GEMINI_TTS_VOICE pins a single voice and skips rotation entirely,
+    which is what the sample tool and any A/B test should use.
+    """
+    forced = os.getenv("GEMINI_TTS_VOICE")
+    if forced:
+        return forced
+
+    import json
+    try:
+        with open(_VOICE_STATE_FILE, encoding="utf-8") as f:
+            idx = json.load(f).get("index", -1)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        idx = -1
+    idx = (idx + 1) % len(VOICE_POOL)
+    try:
+        with open(_VOICE_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"index": idx, "voice": VOICE_POOL[idx][0]}, f, indent=2)
+    except OSError:
+        pass          # a lost cursor costs variety, not a render
+    return VOICE_POOL[idx][0]
 
 _SAMPLE_RATE = 24000
 _RETRIES     = 4
@@ -67,7 +109,7 @@ def _client():
     return genai.Client(api_key=key) if key else None
 
 
-def _synthesize(text: str) -> bytes | None:
+def _synthesize(text: str, voice: str) -> bytes | None:
     """One TTS request with backoff. Returns raw 24kHz mono PCM."""
     client = _client()
     if client is None:
@@ -81,7 +123,7 @@ def _synthesize(text: str) -> bytes | None:
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name=_VOICE))),
+                    voice_name=voice))),
     )
 
     for attempt in range(1, _RETRIES + 1):
@@ -148,7 +190,8 @@ def generate_thai(sentences: list[str], output_path: str
     if not lines:
         return False, []
 
-    pcm = _synthesize(_SEP.join(lines))
+    voice = _next_voice()
+    pcm = _synthesize(_SEP.join(lines), voice)
     if not pcm:
         return False, []
     if not _pcm_to_mp3(pcm, output_path):
@@ -164,5 +207,5 @@ def generate_thai(sentences: list[str], output_path: str
 
     dur = boundaries[-1]["end"]
     print(f"  [gemini-tts] OK — {dur:.1f}s, {len(lines)} sentence boundaries "
-          f"({_MODEL}, voice={_VOICE})")
+          f"({_MODEL}, voice={voice})")
     return True, boundaries

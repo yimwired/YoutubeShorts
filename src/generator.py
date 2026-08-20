@@ -172,7 +172,8 @@ def _call_groq(messages: list, max_tokens: int = 600) -> str:
 def _call_gemini(messages: list, max_tokens: int = 1200,
                  json_mode: bool = True,
                  model: str = "gemini-2.5-flash-lite",
-                 thinking_budget: int | None = None) -> str:
+                 thinking_budget: int | None = None,
+                 response_schema: dict | None = None) -> str:
     """Gemini. JSON output by default (script generation);
     json_mode=False returns plain text (e.g. comment replies).
 
@@ -192,6 +193,10 @@ def _call_gemini(messages: list, max_tokens: int = 1200,
     if thinking_budget is not None:
         cfg.thinking_config = genai_types.ThinkingConfig(
             thinking_budget=thinking_budget)
+    if response_schema is not None:
+        # Constrained decoding: the API emits JSON that parses, so Thai
+        # text containing a quote character cannot break the payload.
+        cfg.response_schema = response_schema
 
     resp = _GEMINI_CLIENT.models.generate_content(
         model=model, contents=user, config=cfg,
@@ -307,6 +312,59 @@ _CHAOS_CATEGORIES = [
     "crime records and heists that seem fictional",
 ]
 
+def _str(desc: str) -> dict:
+    return {"type": "string", "description": desc}
+
+
+# Enforced by the API rather than requested in prose. A Thai script quotes
+# things constantly -- ที่มาของคำว่า "เจ้าสัว" -- and a raw quote inside a
+# hand-written JSON string is unparseable. Constrained decoding escapes it
+# instead, which removes the whole failure class.
+EXPLAINER_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title_th":      _str("ชื่อคลิปภาษาไทย ไม่เกิน 45 ตัวอักษร"),
+        "hook_th":       _str("ข้อความขึ้นจอ 2 วินาทีแรก 10-16 ตัวอักษรไทย"),
+        "thumb_text_th": _str("ข้อความบนภาพปก 2-4 คำ"),
+        "loop_th":       _str("ประโยคปิดท้าย ไม่เกิน 20 ตัวอักษร"),
+        "cta_th":        _str("คำถามชวนคอมเมนต์ 3-8 คำ"),
+        "sentences": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text_th":   _str("หนึ่งประโยคพูด 8-14 คำ"),
+                    "keyword":   _str("english pexels video search term"),
+                    "fallback":  _str("one or two word backup"),
+                    "ai_prompt": _str("english image prompt, or empty string"),
+                },
+                "required": ["text_th", "keyword", "fallback", "ai_prompt"],
+            },
+        },
+        "entities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name":         _str("english name for Wikipedia lookup"),
+                    "sentence_idx": {"type": "integer"},
+                },
+                "required": ["name", "sentence_idx"],
+            },
+        },
+        "description_th":     _str("คำอธิบายคลิป 2-3 ประโยค"),
+        "hashtags_th":        {"type": "array", "items": {"type": "string"}},
+        "music_mood":         _str("mysterious|dramatic|upbeat|melancholic|"
+                                   "epic|peaceful|tense|inspiring"),
+        "thumbnail_keyword":  _str("english pexels photo search term"),
+        "thumbnail_prompt":   _str("english AI image prompt"),
+    },
+    "required": ["title_th", "hook_th", "thumb_text_th", "loop_th", "cta_th",
+                 "sentences", "entities", "description_th", "hashtags_th",
+                 "music_mood", "thumbnail_keyword", "thumbnail_prompt"],
+}
+
+
 _EXPLAINER_SCHEMA = """<output_schema>
 คืนค่าเป็น JSON object อย่างเดียว ห้ามมีข้อความอื่นนอก JSON
 
@@ -402,7 +460,8 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
         for model in ("gemini-2.5-flash", "gemini-2.5-flash-lite"):
             try:
                 raw = _call_gemini(messages, max_tokens=12000, model=model,
-                                   thinking_budget=2048)
+                                   thinking_budget=2048,
+                                   response_schema=EXPLAINER_RESPONSE_SCHEMA)
                 break
             except Exception as e:
                 print(f"[generator] {model} failed: {type(e).__name__}: "

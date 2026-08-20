@@ -120,9 +120,23 @@ def _burn_ass(src: str, ass_path: str, dst: str):
             os.remove(target_ass)
 
 def _escape(text: str) -> str:
+    """Make `text` safe to sit inside a single-quoted drawtext value.
+
+    Quote characters are substituted, not escaped. ffmpeg processes no
+    escapes at all inside '...' -- a backslashed quote closes the string
+    just the same, and everything after it leaks into the filtergraph as
+    syntax. That is not theoretical: a hook reading ใครคือ 'เจ้าสัว' ended
+    the quoted value early, so the commas in the neighbouring alpha
+    expression were read as filter separators and ffmpeg died on
+    "No such filter: '2.25)'".
+
+    Curly quotes render better in a title anyway, so there is nothing to
+    trade off here.
+    """
     return (
         text.replace("\\", "\\\\")
-            .replace("'", "\\'")
+            .replace("'", "’")     # ’
+            .replace('"', "”")     # ”
             .replace(":", "\\:")
             .replace("%", "\\%")
             .replace("\n", " ")
