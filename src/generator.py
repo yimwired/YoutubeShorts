@@ -225,9 +225,25 @@ def _llm_call(messages: list, max_tokens: int = 1200,
 import re as _re
 
 
+# Chinese, Japanese and Korean blocks. The models occasionally drop a CJK
+# character into Thai output, and that is the only script worth removing.
+_CJK = _re.compile(
+    r'[⺀-〿぀-ヿ㄀-ㄯ㄰-㆏'
+    r'㐀-䶿一-鿿가-힯豈-﫿･-ﾟ]'
+)
+
+
 def _clean_thai(text: str) -> str:
-    """Strip CJK hallucinations, keeping Thai + digits + basic punctuation."""
-    return _re.sub(r'[^฀-๿\s\d\.,!?\'\"\-\(\)]', '', text).strip()
+    """Remove CJK hallucinations from Thai text, leaving everything else.
+
+    An earlier version whitelisted Thai characters and deleted the rest,
+    which also deleted Latin script. Real Thai copy is full of it -- brand
+    names, people, loanwords -- so a title about Mark Zuckerberg and AI
+    shipped to the channel as "ของ  มีจุดเริ่มต้นที่ซับซ้อน", the Latin
+    words gone and the holes left behind.
+    """
+    cleaned = _CJK.sub('', text)
+    return _re.sub(r'\s{2,}', ' ', cleaned).strip()
 
 
 def _parse_json(raw: str) -> dict:
