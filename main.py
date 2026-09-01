@@ -17,6 +17,7 @@ from src.rate_tracker import summary as usage_summary
 from src.notion_logger import log_video
 from src.trends import get_trending_topic
 from src.music import get_track
+from src.thai_text import clean_thai
 
 OUTPUT_DIR = "output"
 
@@ -30,7 +31,7 @@ def _make_th_subs(script_th: str, total_dur: float,
     If a phrase is too long (>14 chars), split further by sentence tokenize.
     """
     import re
-    clean = re.sub(r"[^฀-๿\s]", "", script_th).strip()
+    clean = clean_thai(script_th)
     if not clean:
         return []
 
@@ -260,7 +261,7 @@ def _subs_from_sentences(sentences_th: list, audio_path: str) -> list[dict]:
     except Exception:
         tokenize = lambda t: t.split()
 
-    clean = [re.sub(r"[^฀-๿\s]", "", s).strip() for s in sentences_th]
+    clean = [clean_thai(s) for s in sentences_th]
     clean = [s for s in clean if s]
     if not clean:
         return []
@@ -314,7 +315,7 @@ def _subs_from_tts_boundaries(sentences_th: list,
     except Exception:
         tokenize = lambda t: t.split()
 
-    clean = [re.sub(r"[^฀-๿\s]", "", s).strip() for s in sentences_th]
+    clean = [clean_thai(s) for s in sentences_th]
     clean = [s for s in clean if s]
     if not clean or not boundaries:
         return []

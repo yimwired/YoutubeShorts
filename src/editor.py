@@ -3,12 +3,38 @@ import re
 import tempfile
 import os
 
+from src.thai_text import clean_thai
+
 _BASE     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _font_th_raw = os.path.join(_BASE, "Kanit-Bold.ttf")
 FONT_TH   = _font_th_raw.replace("\\", "/").replace(":", "\\:")
 FONT_EN   = "C\\:/Windows/Fonts/impact.ttf" if os.name == "nt" else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 LOGO_PATH = os.path.join(_BASE, "logo.png")
 WORD_GAP  = 0.07
+
+# Shorts accepts three minutes, so nothing about the platform requires the
+# renderer to cut a voiceover short. HARD_CAP exists only to stop a runaway
+# TTS response from producing a ten-minute render; length is controlled in
+# the script, where it belongs. SPEECH_TARGET is the number the writer is
+# aiming at -- exceeding it is logged, never silently trimmed.
+HARD_CAP      = 100.0
+SPEECH_TARGET = 52.0
+
+# Shortest segment ffmpeg will trim without complaint. Two cut points closer
+# together than this, or a cut point past the end of the audio, used to reach
+# the filter graph as a negative `trim=duration` and abort the whole render.
+MIN_SEGMENT = 0.35
+
+# Shot length band. Below ~1.2s the eye reads cuts as noise and tunes out;
+# past ~2.5s the frame is static long enough for a Shorts viewer to swipe.
+# One shot per sentence lands around 4.6s, which is why segments get divided.
+MIN_SHOT   = 1.8
+MAX_SUBCUT = 3
+
+# Where each sub-shot sits in the horizontal slack left by the oversized
+# scale, as a fraction of it. Spread wide enough that the cut is visible,
+# narrow enough that a centred subject stays in frame in both shots.
+_SHOT_FRAMING = {1: (0.50,), 2: (0.34, 0.66), 3: (0.30, 0.50, 0.70)}
 
 # ── Thai ASS karaoke helpers ─────────────────────────────────────────────────
 
@@ -61,7 +87,7 @@ def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
 
     lines, current = [], []
     for i, w in enumerate(words):
-        text = re.sub(r"[^฀-๿\s]", "", w["word"]).strip()
+        text = clean_thai(w["word"])
         if not text:
             continue
         current.append(w)
@@ -83,7 +109,7 @@ def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
             line_len = 0
             for w in line_words:
                 dur_cs = max(1, int((w["end"] - w["start"]) * 100))
-                text   = re.sub(r"[^฀-๿\s]", "", w["word"]).strip()
+                text   = clean_thai(w["word"])
                 if not text:
                     continue
                 if max_chars < 999 and line_len + len(text) > max_chars and line_len > 0:
@@ -163,6 +189,11 @@ def _find_cut_points(words: list[dict], n: int, duration: float) -> list[float]:
         if words[i]["start"] - words[i - 1]["end"] > 0.25:
             breaks.append(words[i]["start"])
 
+    # Whisper timestamps run against the full voiceover, which can be longer
+    # than the window being cut up; a break past the end would land as a
+    # negative trim duration downstream.
+    breaks = [b for b in breaks if MIN_SEGMENT < b < duration - MIN_SEGMENT]
+
     if len(breaks) >= n - 1:
         # Pick evenly spaced from natural breaks
         step = len(breaks) / (n - 1)
@@ -173,35 +204,102 @@ def _find_cut_points(words: list[dict], n: int, duration: float) -> list[float]:
         return [step * i for i in range(1, n)]
 
 
+def _plan_shots(segments: list[tuple], n_clips: int) -> list[dict]:
+    """Expand sentence-length segments into shot-length ones.
+
+    One shot per sentence holds the same frame for four to five seconds. The
+    channel's retention curve goes flat exactly there, and the benchmark for
+    Shorts is a visual change every 1.5-2.5s, so any segment long enough to
+    carry two shots is divided into equal sub-shots taken from different
+    windows of that sentence's own clip. The subject stays on topic; only
+    the framing changes.
+
+    Returns one dict per shot: clip index, duration, and its position within
+    the parent segment (used to pick a distinct window of the source).
+    """
+    shots = []
+    for i, (t_start, t_end) in enumerate(segments):
+        seg_dur = max(round(t_end - t_start, 3), MIN_SEGMENT)
+        n_sub   = min(MAX_SUBCUT, max(1, int(seg_dur // MIN_SHOT)))
+        sub_dur = round(seg_dur / n_sub, 3)
+        for j in range(n_sub):
+            # Absorb the rounding remainder into the last sub-shot so the
+            # shots of a segment still add up to the segment.
+            dur = round(seg_dur - sub_dur * (n_sub - 1), 3) if j == n_sub - 1 else sub_dur
+            shots.append({"clip_idx": i % n_clips, "dur": max(dur, MIN_SEGMENT),
+                          "sub": j, "of": n_sub})
+
+    # Close on the footage the video opened with. The final script sentence is
+    # written as a callback to the hook, so returning to the first image makes
+    # the last frame flow into the first one -- a viewer who does not register
+    # the ending rewatches without deciding to, and YouTube reads that replay
+    # as satisfaction. It is the cheapest retention device available here.
+    if len(shots) > 1:
+        shots[-1] = {**shots[-1], "clip_idx": shots[0]["clip_idx"],
+                     "sub": shots[0]["sub"], "of": shots[0]["of"]}
+    return shots
+
+
 def _build_segment_filters(clips: list[str], segments: list[tuple],
                             total_dur: float) -> tuple[list[str], list[str]]:
+    """Build per-shot trim/crop/pan filters.
+
+    Returns (filter_parts, shot_labels) for use in concat. A clip feeding more
+    than one shot is fanned out with `split` first -- an ffmpeg input pad can
+    only be consumed once, so reusing `[n:v]` directly is a filtergraph error
+    rather than a repeated clip.
     """
-    Build per-segment trim+crop filters.
-    Returns (filter_parts, seg_labels) for use in concat.
-    """
+    shots = _plan_shots(segments, len(clips))
+
+    uses = {}
+    for sh in shots:
+        uses[sh["clip_idx"]] = uses.get(sh["clip_idx"], 0) + 1
+
     filter_parts = []
+    # Fan out every clip that more than one shot draws from.
+    for clip_idx, n in sorted(uses.items()):
+        if n > 1:
+            outs = "".join(f"[c{clip_idx}_{k}]" for k in range(n))
+            filter_parts.append(f"[{clip_idx}:v]split={n}{outs}")
+
+    taken = {}
     labels = []
-    for i, (t_start, t_end) in enumerate(segments):
-        seg_dur = round(t_end - t_start, 3)
-        clip_idx = i % len(clips)
+    for i, sh in enumerate(shots):
+        clip_idx = sh["clip_idx"]
+        dur      = sh["dur"]
         clip_dur = _clip_duration(clips[clip_idx])
-        label = f"seg{i}"
-        if clip_dur >= seg_dur:
-            start_t = max(0, (clip_dur - seg_dur) / 2)
-            filter_parts.append(
-                f"[{clip_idx}:v]trim=start={round(start_t,3)}:duration={seg_dur},"
-                f"setpts=PTS-STARTPTS,"
-                f"scale=1188:2112:force_original_aspect_ratio=increase,"
-                f"crop=1080:1920,setsar=1[{label}]"
-            )
+        label    = f"seg{i}"
+
+        k = taken.get(clip_idx, 0)
+        taken[clip_idx] = k + 1
+        src = f"[c{clip_idx}_{k}]" if uses[clip_idx] > 1 else f"[{clip_idx}:v]"
+
+        # Spread the sub-shots of one segment across the source clip so two
+        # shots of the same sentence are not the same footage twice.
+        usable  = max(clip_dur - dur, 0.0)
+        start_t = round(usable * (sh["sub"] + 0.5) / sh["of"], 3) if usable else 0.0
+
+        if clip_dur >= dur:
+            head = f"{src}trim=start={start_t}:duration={dur}"
         else:
-            loops = int(seg_dur / clip_dur) + 2
-            filter_parts.append(
-                f"[{clip_idx}:v]loop=loop={loops}:size=9999:start=0,"
-                f"trim=duration={seg_dur},setpts=PTS-STARTPTS,"
-                f"scale=1188:2112:force_original_aspect_ratio=increase,"
-                f"crop=1080:1920,setsar=1[{label}]"
-            )
+            loops = int(dur / max(clip_dur, 0.1)) + 2
+            head  = (f"{src}loop=loop={loops}:size=9999:start=0,"
+                     f"trim=duration={dur}")
+
+        # Two sub-shots of one sentence come from the same clip, so a shared
+        # centre crop would make the cut invisible -- scene detection did not
+        # even register it. Each sub-shot instead frames a different part of
+        # the picture, which reads as a second camera setup rather than a
+        # jump cut, and a slow drift on top keeps the frame alive. `crop`
+        # evaluates x per frame, so the motion costs nothing.
+        base  = _SHOT_FRAMING[sh["of"]][sh["sub"]]
+        sign  = "+" if i % 2 == 0 else "-"
+        drift = f"(iw-ow)*({base}{sign}0.06*t/{dur})"
+        filter_parts.append(
+            f"{head},setpts=PTS-STARTPTS,"
+            f"scale=1242:2208:force_original_aspect_ratio=increase,"
+            f"crop=1080:1920:x='clip({drift},0,iw-ow)':y=(ih-oh)/2,setsar=1[{label}]"
+        )
         labels.append(label)
     return filter_parts, labels
 
@@ -470,10 +568,18 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
                  loop_text: str = None,
                  cta_text: str = None) -> str:
 
-    # 58s was sized for the old ~30s scripts plus a title and outro card.
-    # The explainer format targets 45-60s of speech with no cards, so the
-    # cap has to clear 60 or the reveal gets guillotined off the end.
-    audio_dur = min(_clip_duration(audio_path) + 0.5, 62.0)
+    # Render the whole voiceover. The previous 62.0s ceiling truncated it
+    # instead, and both failure modes reached the channel: a 64.0s Thai
+    # voiceover published with its closing reveal sliced off mid-sentence,
+    # and a 68.2s one aborted the render because segment boundaries beyond
+    # the ceiling became negative trim durations. An over-long script is a
+    # writing problem, so it is reported here and fixed in the prompt.
+    speech_dur = _clip_duration(audio_path)
+    audio_dur  = min(speech_dur + 0.5, HARD_CAP)
+    if speech_dur > SPEECH_TARGET:
+        print(f"  [editor] voiceover is {speech_dur:.1f}s against a "
+              f"{SPEECH_TARGET:.0f}s target — rendering it in full; "
+              f"the script wants tightening")
 
     # ── Pre-mix audio: voiceover + background music ──────────────
     final_audio = audio_path
@@ -503,9 +609,20 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
 
     # ── Find cut points ─────────────────────────────────────────
     if cut_times:
-        cut_points = [t for t in sorted(cut_times) if 0 < t < audio_dur]
+        cut_points = sorted({round(t, 3) for t in cut_times
+                             if MIN_SEGMENT < t < audio_dur - MIN_SEGMENT})
     else:
         cut_points = _find_cut_points(words or [], n_clips, audio_dur)
+
+    # Collapse cuts that land on top of each other. Sentence boundaries from
+    # silencedetect occasionally arrive a few milliseconds apart, and a
+    # zero-length segment is a filtergraph error, not a fast cut.
+    spaced = []
+    for t in cut_points:
+        if not spaced or t - spaced[-1] >= MIN_SEGMENT:
+            spaced.append(t)
+    cut_points = spaced
+
     boundaries = [0.0] + cut_points + [audio_dur]
     segments = [(boundaries[i], boundaries[i + 1]) for i in range(len(boundaries) - 1)]
 
@@ -514,7 +631,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
 
     # ── Concat all segments ──────────────────────────────────────
     concat_inputs = "".join(f"[{l}]" for l in seg_labels)
-    concat_filter = f"{concat_inputs}concat=n={len(segments)}:v=1:a=0[base]"
+    concat_filter = f"{concat_inputs}concat=n={len(seg_labels)}:v=1:a=0[base]"
 
     # ── Text overlays ────────────────────────────────────────────
     text_parts = []

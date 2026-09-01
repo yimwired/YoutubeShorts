@@ -197,10 +197,18 @@ def _normalize_hashtags(raw, default: list[str]) -> list[str]:
     return tags
 
 
-def _title_with_tags(title: str, tags: list, max_len: int = 95) -> str:
-    picked = ["#" + t for t in tags[:4] if t.lower() != "shorts"][:3]
-    suffix = " " + " ".join(["#Shorts"] + picked)
-    return (title[:max_len - len(suffix)] + suffix).strip()
+def _description_with_tags(description: str, tags: list, n: int = 5) -> str:
+    """Put the hashtags at the foot of the description instead of the title.
+
+    YouTube renders the first three hashtags of a description as links above
+    the title, so they are just as findable there -- and the Shorts player
+    truncates the title after roughly forty characters, which the old
+    "title #Shorts #a #b #c" shape spent on tags the viewer did not need to
+    read. The title now gets all forty of them.
+    """
+    picked = ["#" + t for t in tags if t.lower() != "shorts"][:n]
+    line   = " ".join(["#Shorts"] + picked)
+    return f"{description.rstrip()}" + chr(10) + chr(10) + line
 
 
 def generate_one(index: int, publish_at: str) -> None:
@@ -303,9 +311,10 @@ def generate_one(index: int, publish_at: str) -> None:
     if cta_th:
         desc_th = f"{cta_th}\n\n{desc_th}"
 
-    hashtags = _normalize_hashtags(data.get("hashtags_th"),
-                                   ["shorts", "เรื่องน่ารู้", "ความรู้"])
-    title_full = _title_with_tags(title_th, hashtags)
+    hashtags   = _normalize_hashtags(data.get("hashtags_th"),
+                                     ["shorts", "เรื่องน่ารู้", "ความรู้"])
+    desc_th    = _description_with_tags(desc_th, hashtags)
+    title_full = title_th.strip()[:100]
 
     notion_page_id = (None if os.getenv("DRY_RUN") == "1"
                       else log_scheduled(f"[TH] {title_th}",
@@ -321,6 +330,9 @@ def generate_one(index: int, publish_at: str) -> None:
         "tags":           hashtags,
         "topic":          brief.topic,
         "brief_source":   brief.source,
+        # Posted by seed_comments.py once the video is public -- see the note
+        # in src/uploader.py about why it cannot go up at insert time.
+        "cta":            cta_th,
         "video_path":     final_th,
         "thumb_path":     thumb,
         "thumb_path_b":   thumb_b,
@@ -343,7 +355,7 @@ def generate_one(index: int, publish_at: str) -> None:
         result = upload_youtube(final_th, title_full,
                                 description=desc_th, tags=hashtags,
                                 thumbnail_path=thumb, lang="th",
-                                publish_at=publish_at, seed_comment=cta_th)
+                                publish_at=publish_at)
 
     # TikTok stays off until the official Content Posting API is approved:
     # tiktok-uploader 1.2.0's xpath selectors broke against TikTok's 2026-05

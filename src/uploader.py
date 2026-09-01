@@ -84,7 +84,12 @@ def upload_youtube(video_path: str, title: str, description: str = "",
         "snippet": {
             "title": title[:100],
             "description": full_desc,
-            "tags": list({*(tags or []), "shorts", "facts", "didyouknow"}),
+            # "facts"/"didyouknow" used to be forced onto every upload. On a
+            # Thai channel those tell YouTube the video is for an English
+            # audience, which is the opposite of what the topic model needs.
+            "tags": list({*(tags or []), "shorts"}
+                         | ({"เรื่องน่ารู้", "สาระ"} if lang == "th"
+                            else {"facts", "didyouknow"})),
             "categoryId": "27",  # Education
             "defaultLanguage": lang,
         },
@@ -111,7 +116,11 @@ def upload_youtube(video_path: str, title: str, description: str = "",
         except Exception as e:
             print(f"  [YouTube] Thumbnail failed: {e}")
 
-    if seed_comment:
+    # Only when the video is already visible. A scheduled upload is inserted
+    # private, and YouTube answers 403 to a comment on a video nobody can see
+    # -- which is what silently happened to every seeded question until
+    # seed_comments.py took the job over and started posting after publish.
+    if seed_comment and not publish_at:
         _seed_top_comment(youtube, vid_id, seed_comment)
 
     return url, vid_id

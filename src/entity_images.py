@@ -19,6 +19,34 @@ _UA = {"User-Agent": "FactSnap-Shorts/1.0 (entity-image fetcher; contact: youtub
 _TIMEOUT = 8
 
 
+# A usable overlay is a photograph of the thing. What these APIs return for a
+# company or a product very often is not: "Roblox" came back as a screenshot of
+# a Turkish court block notice, "Knowledge Revolution" as a stock infographic
+# about skilled labour. Both went on screen as a 320px unreadable white box.
+# Banners, screenshots and diagrams are wide; portraits and objects are not, so
+# the shape of the file is enough to tell them apart.
+_MIN_EDGE     = 200
+_ASPECT_RANGE = (0.55, 1.45)
+
+
+def _is_usable(path: str) -> bool:
+    """Reject banners, screenshots and near-blank logo cards."""
+    try:
+        from PIL import Image, ImageStat
+        with Image.open(path) as im:
+            w, h = im.size
+            if min(w, h) < _MIN_EDGE:
+                return False
+            if not _ASPECT_RANGE[0] <= w / h <= _ASPECT_RANGE[1]:
+                return False
+            stat = ImageStat.Stat(im.convert("L"))
+        # Mostly-white and almost flat: a logo or a page of text, not a photo.
+        return not (stat.mean[0] > 225 and stat.stddev[0] < 35)
+    except Exception:
+        # An unreadable file is not worth putting on screen either.
+        return False
+
+
 def _download(url: str, dst_path: str) -> str | None:
     try:
         r = requests.get(url, headers=_UA, timeout=_TIMEOUT)
@@ -26,6 +54,9 @@ def _download(url: str, dst_path: str) -> str | None:
             return None
         with open(dst_path, "wb") as f:
             f.write(r.content)
+        if not _is_usable(dst_path):
+            os.remove(dst_path)
+            return None
         return dst_path
     except Exception:
         return None
