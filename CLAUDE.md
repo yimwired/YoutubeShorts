@@ -53,7 +53,9 @@ generate_batch.py  → queue/job_<ts>_<lang>.json + output/short_<ts>_<lang>.mp4
 - `daily.yml` cron `0 23 * * *` UTC = 06:00 Bangkok — generate + upload, แล้ว commit state กลับ repo (`queue/`, `output/thumb_*_b.jpg`, `topic_history.json`, `rate_usage.json`, `bucket_state.json`)
 - `swap.yml` cron `0 19 * * *` UTC = 02:00 Bangkok — thumbnail A/B swap + analytics→Notion + prune thumb เก่า (`prune_thumbs.py`)
 - Local Task Scheduler (`FactSnapBatch`, `FactSnapSwap`) ถูก disable แล้ว — ถ้าจะรัน batch local ต้อง `git pull` ก่อน (state อยู่ใน repo) และ re-enable task ไม่ได้ถ้า GH cron ยังเปิด (จะรันซ้ำซ้อน)
-- ข้อจำกัด cloud: ไม่มี `music/` (143MB, ไม่ commit เพราะ repo public) → BGM fallback SoundHelix; font EN = DejaVu Bold แทน Impact (ดู `FONT_EN` ใน editor.py)
+- ข้อจำกัด cloud: `music/` ไม่ขึ้น repo (144MB + repo public) → ใช้ `music/cloud/<mood>.mp3`
+  ที่ commit ไว้ (เตรียมด้วย `tools/prepare_cloud_music.py` แล้ว `git add -f`)
+  ถ้าไม่มีก็ fallback SoundHelix; font EN = DejaVu Bold แทน Impact (ดู `FONT_EN` ใน editor.py)
 
 ## Pipeline (per video)
 
@@ -142,6 +144,12 @@ $env:DRY_RUN="1"; python generate_batch.py 1
 ## Constraints
 
 - Vertical 9:16 (1080x1920), 38-45 วิ, H.264 + AAC
+- **ส่งที่ -14 LUFS** (`LOUDNORM` ใน editor.py) — YouTube เล่นทุกคลิปที่ -14
+  ดังกว่านั้นมันหรี่ให้ เบากว่านั้นมันไม่ดันขึ้น. เดิม `amix` ไม่ได้ตั้ง `normalize=0`
+  เลยหารเสียงด้วยจำนวน input → ทุกคลิปออกที่ -22 LUFS = เบากว่าคลิปอื่นในฟีด 8 dB
+- เพลงประกอบ normalize เป็น `MUSIC_LUFS = -30` แล้ว duck ด้วย `sidechaincompress`
+  ห้ามกลับไปใช้ `volume=` คูณตรงๆ — เพลงในคลังมาสเตอร์มาที่ -14.2 ถึง -10.7 LUFS
+  คูณค่าเดียวกันจึงได้ระดับเตียงไม่เท่ากันทุกคลิป
 - **ห้ามใส่ cap ที่ตัดเสียงพากย์กลับมา** — `editor.py` เดิม cap 62 วิ ทำให้
   คลิปที่ TTS ยาว 64 วิ ถูกตัดประโยคปิดทิ้ง และ 68 วิ render fail
   (cut point เกิน cap → `trim=duration` ติดลบ). `HARD_CAP = 100` เป็นกันบ้าเท่านั้น

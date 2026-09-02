@@ -11,6 +11,12 @@ output/*
 !output/thumb_*_b.jpg
 *.mp4
 *.mp3
+# music/cloud/ holds the small mood beds the cloud runner needs, and it
+# stays ignored on purpose: this repo is public, so publishing audio is a
+# licensing decision that has to be made deliberately rather than swept in
+# by a `git add -A`. To ship them once you are sure they are yours to
+# publish:  git add -f music/cloud/
+# Git tracks them from then on and this line stops applying to them.
 *.wav
 
 # Python

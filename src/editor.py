@@ -31,6 +31,22 @@ MIN_SEGMENT = 0.35
 MIN_SHOT   = 1.8
 MAX_SUBCUT = 3
 
+# Delivery loudness. YouTube plays everything at -14 LUFS: it attenuates an
+# upload that is louder and leaves a quieter one where it is, so anything
+# below the target plays quieter than the videos around it in the feed.
+LOUDNORM = "loudnorm=I=-14:TP=-1.5:LRA=11"
+
+# Bed loudness, absolute rather than a gain multiplier. The library masters
+# between -14.2 and -10.7 LUFS depending on where a track came from, so the
+# old `volume=0.13` produced a bed anywhere across a 3.5 dB spread and the
+# SoundHelix fallback came in loudest of all. Normalising the music to a
+# fixed target makes the bed sit the same distance under the voiceover no
+# matter which track is playing.
+#
+# The voiceover arrives at -16 LUFS (see _pcm_to_mp3 in tts_gemini), so -30
+# puts the bed 14 dB down: present in the pauses, subordinate under speech.
+MUSIC_LUFS = -30
+
 # Where each sub-shot sits in the horizontal slack left by the oversized
 # scale, as a fraction of it. Spread wide enough that the cut is visible,
 # narrow enough that a centred subject stays in frame in both shots.
@@ -632,27 +648,47 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
               f"{SPEECH_TARGET:.0f}s target — rendering it in full; "
               f"the script wants tightening")
 
-    # ── Pre-mix audio: voiceover + background music ──────────────
-    final_audio = audio_path
+    # ── Master the audio bus ─────────────────────────────────────
+    # Two faults here, and the first one cost reach on every video ever
+    # published. amix defaults to normalize=1, which divides each input by
+    # the input count, so mixing music in pulled the whole programme down
+    # 6 dB. Measured output was -22 LUFS against YouTube's -14 delivery
+    # target, and YouTube turns loud uploads down without ever turning
+    # quiet ones up -- in a feed, this channel simply played quieter than
+    # everything around it.
+    #
+    # The second: music sat at a flat 0.13, which is quiet enough to be
+    # inaudible under speech and in the gaps alike, so it paid for its
+    # bandwidth and contributed nothing. Ducked against the voiceover it
+    # can sit high enough to carry the pauses and still clear out the
+    # instant a word lands.
+    final_audio = audio_path.replace(".mp3", "_master.m4a")
     if music_path:
-        mixed = audio_path.replace(".mp3", "_mixed.m4a")
-        mix_cmd = [
-            "ffmpeg", "-y",
-            "-i", audio_path,
-            "-stream_loop", "-1", "-i", music_path,
-            "-filter_complex",
-            (f"[0:a]volume=1.0[vo];"
-             f"[1:a]atrim=duration={audio_dur},asetpts=PTS-STARTPTS,volume=0.13[bg];"
-             f"[vo][bg]amix=inputs=2:duration=first[aout]"),
-            "-map", "[aout]",
-            "-c:a", "aac", "-b:a", "128k",
-            "-t", str(audio_dur), mixed
-        ]
-        r = subprocess.run(mix_cmd, capture_output=True, text=True)
-        if r.returncode == 0:
-            final_audio = mixed
-        else:
-            print("  [Music] Mix failed, using voiceover only")
+        graph = (
+            f"[0:a]asplit=2[vo][key];"
+            f"[1:a]atrim=duration={audio_dur},asetpts=PTS-STARTPTS,"
+            f"loudnorm=I={MUSIC_LUFS}:TP=-6:LRA=7[bed];"
+            f"[bed][key]sidechaincompress=threshold=0.06:ratio=4:"
+            f"attack=8:release=250:makeup=1[duck];"
+            f"[vo][duck]amix=inputs=2:duration=first:normalize=0[mix];"
+            f"[mix]{LOUDNORM}[aout]"
+        )
+        cmd = ["ffmpeg", "-y",
+               "-i", audio_path,
+               "-stream_loop", "-1", "-i", music_path,
+               "-filter_complex", graph]
+    else:
+        cmd = ["ffmpeg", "-y",
+               "-i", audio_path,
+               "-filter_complex", f"[0:a]{LOUDNORM}[aout]"]
+    cmd += ["-map", "[aout]", "-c:a", "aac", "-b:a", "160k",
+            "-t", str(audio_dur), final_audio]
+
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"  [audio] master failed, shipping the raw voiceover: "
+              f"{(r.stderr or '')[-200:]}")
+        final_audio = audio_path
 
     # ── Decide clips ────────────────────────────────────────────
     all_clips = clips if clips else [video_path]

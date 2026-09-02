@@ -6,6 +6,14 @@ import subprocess
 MUSIC_DIR = "music"
 CACHE_DIR = os.path.join(MUSIC_DIR, ".cache")
 
+# The only music that reaches the cloud runner. Everything else under music/
+# is gitignored -- it is 144MB and its licensing is the owner's business, not
+# something to publish in a public repo -- so GitHub Actions had no tracks at
+# all and every cloud render fell through to SoundHelix. This directory is
+# committed: one small file per mood, named for the mood, prepared by
+# tools/prepare_cloud_music.py.
+CLOUD_DIR = os.path.join(MUSIC_DIR, "cloud")
+
 BASE_URL = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-{}.mp3"
 
 MOOD_SONGS = {
@@ -51,7 +59,8 @@ def get_track(mood: str = None) -> str | None:
     Priority:
       1. music/<mood>/*.mp3|wav|m4a   (mood-matched local tracks)
       2. music/*.mp3|wav|m4a          (any local track, flat)
-      3. SoundHelix cached/download fallback
+      3. music/cloud/<mood>.mp3       (committed; the only tier the runner has)
+      4. SoundHelix cached/download fallback
     """
     os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -72,6 +81,15 @@ def get_track(mood: str = None) -> str | None:
              and os.path.isfile(os.path.join(MUSIC_DIR, f))]
     if local:
         return os.path.join(MUSIC_DIR, random.choice(local))
+
+    if os.path.isdir(CLOUD_DIR):
+        exact = os.path.join(CLOUD_DIR, f"{mood_key}.mp3")
+        if mood_key and os.path.isfile(exact):
+            return exact
+        cloud = [f for f in os.listdir(CLOUD_DIR)
+                 if f.lower().endswith(AUDIO_EXT) and not f.startswith(".")]
+        if cloud:
+            return os.path.join(CLOUD_DIR, random.choice(cloud))
 
     nums = list(MOOD_SONGS.get(mood_key, DEFAULT_SONGS))
     random.shuffle(nums)
