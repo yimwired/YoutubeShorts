@@ -25,13 +25,18 @@ from src.rate_tracker import record
 
 _MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
 
-# Rotation pool, alternating perceived gender so consecutive days do not
-# sound like the same narrator. Google publishes a one-word character for
-# each voice but no gender, so the ordering here is by ear -- rerun
-# tools/voice_samples.py to re-audition and reorder.
+# The channel narrates in one voice. On a feed where nobody sees a face,
+# the narrator IS the channel -- it is what a returning viewer recognises
+# before they have read the title. Rotating six voices across six days was
+# deliberate ("so consecutive days do not sound like the same narrator"),
+# and it gave the channel six identities and a 0.12% subscribe rate.
 #
-# Order matters: the pool is walked in sequence, one step per video, so
-# male and female must alternate down the list for the alternation to hold.
+# The rotation is still here for auditioning: set GEMINI_TTS_ROTATE=1 to
+# walk the pool a step per video, or GEMINI_TTS_VOICE to pin a different
+# one. Order matters when rotating -- the pool alternates perceived gender
+# down the list, by ear, since Google publishes no gender per voice.
+DEFAULT_VOICE = "Charon"
+
 VOICE_POOL = [
     ("Charon",   "informative"),
     ("Leda",     "youthful"),
@@ -53,6 +58,8 @@ def _next_voice() -> str:
     forced = os.getenv("GEMINI_TTS_VOICE")
     if forced:
         return forced
+    if os.getenv("GEMINI_TTS_ROTATE") != "1":
+        return DEFAULT_VOICE
 
     import json
     try:
