@@ -124,9 +124,12 @@ error ถูก catch แล้ว log เฉยๆ เลยไม่มีใ�
    ถ้ายังไม่ขึ้น เช็ค `seed_comment_at` ใน job json
 3. **thumbnail ยังไม่แตะ** — ผลต่อ Shorts feed น้อย (feed ไม่โชว์ปก)
    แต่มีผลกับ search/related ซึ่งคือ 2.4% ของ traffic
-4. **`swap_thumbnails.py` ยังใช้ `RETENTION_FLOOR = 45.0`** — คลิปสั้นลงแล้ว
-   retention ควรสูงขึ้น ถ้าเกิน 45 หมดทุกคลิป A/B swap จะไม่เคยทำงาน
-   ค่อยปรับหลังมีข้อมูล 1 สัปดาห์
+4. **A/B swap ทำงานอยู่จริง** — swap ไปแล้ว 129 จาก 499 คลิป (26%) ไม่ได้ตายอย่างที่กลัว
+   `RETENTION_FLOOR = 45.0` ไม่ได้แตะ เพราะคลิปที่ retention ดีแต่วิวน้อย
+   ไม่ใช่ปัญหาที่ปกจะแก้ได้อยู่แล้ว ถ้าคลิปสั้นทำให้ retention เกิน 45 หมด
+   แล้ว swap เงียบไป นั่นคือพฤติกรรมที่ถูก ไม่ใช่บั๊ก
+   หมายเหตุ: traffic 97% มาจาก Shorts feed ซึ่งไม่โชว์ปก ปกมีผลแค่ search/related
+   ถ้าจะตัดทิ้งเพื่อประหยัดเวลา render + พื้นที่ repo ก็มีเหตุผล — Film ตัดสิน
 5. **`scheduler.py` ยัง dead code** — อ้าง `generate_one_pair` ที่ลบไปแล้ว
 6. **ไฟล์ค้างใน repo root** — `retry_pair3.*`, `tmp_develian/`, PNG ของ Gemini,
    `token_youtube.json.bak*` ยังไม่ได้เก็บกวาด
