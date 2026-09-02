@@ -34,8 +34,15 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      # apt-get update first. Without it the step installs against whatever
+      # index the runner image shipped with, and the run on 2026-09-02 died
+      # in 44s on a 404 for libssh-gcrypt-4 after Ubuntu bumped the version.
+      # --no-install-recommends also skips ~30MB of speech models ffmpeg
+      # recommends and this pipeline never touches.
       - name: Install FFmpeg
-        run: sudo apt-get install -y ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -71,7 +78,16 @@ jobs:
         # One Thai video a day, published at 12:00 Bangkok. Generating at
         # 06:00 leaves six hours of slack for a research or TTS retry
         # before the scheduled publish time.
-        run: python generate_batch.py 1
+        # One retry. Research, TTS and the Pexels fetch all sit behind other
+        # people's rate limits, and a day with no video is the expensive
+        # outcome -- generate_batch exits non-zero only when nothing was
+        # queued, so a retry cannot double-post.
+        run: |
+          python generate_batch.py 1 || {
+            echo "[daily] first attempt failed — retrying once in 60s"
+            sleep 60
+            python generate_batch.py 1
+          }
 
       # Queue jobs + B thumbnails must land in the repo: the swap workflow
       # (swap.yml, 02:00 Bangkok) runs on a fresh runner days later and reads
