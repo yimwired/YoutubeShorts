@@ -21,7 +21,19 @@ slot 08/12/19 median = 132 / 98 / 104 → เวลาลงไม่ใช่�
 งบ render ทั้งหมดเลยไปลงที่คลิปเดียวแทนหกคลิป.
 
 **Format = explainer** — เล่า "ที่มาของสิ่งที่กำลังฮิต / สิ่งที่คนคิดว่ารู้แล้ว"
-ยาว 45-60 วิ โครง HOOK → STAKE → ORIGIN → SPREAD → REVEAL+LOOP.
+**9 ประโยค ยาว 38-45 วิ** โครง HOOK → PROOF → ORIGIN → TURN → REVEAL → LOOP.
+แบรนด์บนจอ = `ที่มาของ · EP.n` ข้างโลโก้ (`series_state.json["explainer"]`).
+
+เดิมคือ 12 ประโยค 45-60 วิ โครง HOOK → STAKE → ORIGIN → SPREAD → REVEAL.
+retention curve ของ 90 วัน (ดู `src/analytics.py`) หลุด 40-50% ระหว่าง
+ratio 10-25% ของคลิป = วินาทีที่ 6-15 ซึ่งคือช่วง STAKE พอดี —
+STAKE คือประโยคที่ "บอกว่าเดี๋ยวจะเฉลย" ทั้งช่วง ไม่ให้ข้อมูลใหม่เลย
+คนเลื่อนฟีดไม่รอ เลยตัดทิ้ง ประโยคที่ 2 ต้องให้ fact จริงทันที.
+
+| | คลิป 58-63 วิ (ส.ค.) | เกณฑ์ที่ YouTube ดันต่อ |
+|---|---|---|
+| retention | 38-48% | 50% (คลิป 30-60 วิ) |
+| ภาพเปลี่ยนทุก | 4.6 วิ | 1.5-2.5 วิ |
 
 Styles เดิม (`trending` / `chaos` / `narrative`) ยังอยู่ใน `src/generator.py`
 เพราะ `test_trending.py` / `test_chaos.py` / `test_narrative.py` ยังเรียกใช้ —
@@ -48,13 +60,15 @@ generate_batch.py  → queue/job_<ts>_<lang>.json + output/short_<ts>_<lang>.mp4
 `generate_batch.py:generate_one()` เรียงตามนี้:
 1. `src/trends.py:get_trend_candidates` — Google Trends RSS (TH+US) + YouTube most-popular chart TH, กรอง noise regex ออก
 2. `src/research.py:get_brief` — **Gemini + Google Search grounding** เลือกหัวข้อที่เล่า "ที่มา" ได้ แล้วขุด origin/spread/numbers/surprise. ไม่มีเทรนด์ผ่านเกณฑ์ → `research_evergreen()` จาก `EXPLAINER_CATEGORIES`. คืน `Brief` หรือ `None`
-3. `src/generator.py:generate_explainer_script` — gemini-2.5-flash เขียนสคริปต์ไทย 11-12 ประโยค **ห้ามใส่ fact ที่ไม่มีใน brief**
+3. `src/generator.py:generate_explainer_script` — gemini-2.5-flash เขียนสคริปต์ไทย **9 ประโยค 78-95 คำ** **ห้ามใส่ fact ที่ไม่มีใน brief**
 4. `src/footage.py:fetch_multiple_clips` — Pexels 1 clip ต่อประโยค
 5. `src/tts.py:generate_voiceover` — Gemini TTS → edge-tts Premwadee → gTTS (ดูหัวข้อ Voice)
 6. `main.py:_sync_th_subs` — silencedetect → TTS boundaries → Whisper → script split
-7. `src/editor.py:create_short` — ffmpeg ASS karaoke 2-pass, Kanit, hook pop 0-2.6 วิ, reveal flash, end card
+7. `src/editor.py:create_short` — ffmpeg ASS karaoke 2-pass, Kanit, hook pop 0-2.6 วิ, reveal flash, end card, series badge
 8. `src/thumbnail.py` — Pollinations flux-pro → clip frame → Pexels → video frame
 9. `src/uploader.py:upload_youtube` — Data API v3 + `publish_at`
+10. `seed_comments.py` (รันจาก `reply.yml` 13:00 BKK) — โพสต์คำถามชวนคอมเมนต์
+    **หลัง**คลิป public แล้ว
 
 **ห้ามรวม tools กับ `response_mime_type=application/json` ใน call เดียว** — Gemini
 ตอบ 400 `Tool use with a response mime type: 'application/json' is unsupported`.
@@ -127,7 +141,11 @@ $env:DRY_RUN="1"; python generate_batch.py 1
 
 ## Constraints
 
-- Vertical 9:16 (1080x1920), 45-60 วิ, H.264 + AAC. cap ใน `editor.py` = 62 วิ
+- Vertical 9:16 (1080x1920), 38-45 วิ, H.264 + AAC
+- **ห้ามใส่ cap ที่ตัดเสียงพากย์กลับมา** — `editor.py` เดิม cap 62 วิ ทำให้
+  คลิปที่ TTS ยาว 64 วิ ถูกตัดประโยคปิดทิ้ง และ 68 วิ render fail
+  (cut point เกิน cap → `trim=duration` ติดลบ). `HARD_CAP = 100` เป็นกันบ้าเท่านั้น
+  คุมความยาวที่สคริปต์ ไม่ใช่ที่ renderer. `SPEECH_TARGET = 52` แค่ log เตือน
 - ไทยอย่างเดียว 1 ไฟล์ต่อวัน
 - Font ไทย = bundled `Kanit-Bold.ttf` (thumbnail ใช้ตัวนี้ด้วย — Impact ไม่มี glyph ไทย)
 - ห้าม hardcode API key
@@ -138,4 +156,11 @@ $env:DRY_RUN="1"; python generate_batch.py 1
 - อย่าลบ `_subs_from_sentences()` fallback — ใช้เมื่อ silencedetect กับ TTS boundary ไม่พอ
 - **อย่าเปิด `title_card` / `outro_card` กลับมาสำหรับ explainer** — title card = ภาพนิ่งเงียบ 0.8 วิ ก่อน hook (ช่วงที่คนตัดสินใจปัด), outro card = จอดำ 1.5 วิ ที่ตัด loop กลับต้นคลิปทิ้ง
 - อย่าให้ generator แต่ง fact เอง — ทุกอย่างต้องมาจาก `Brief` ที่ ground แล้ว เทรนด์ส่วนใหญ่เกิดหลัง training cutoff
+- **อย่าโพสต์คอมเมนต์ตอน upload** — คลิปยัง private (รอ `publish_at`) YouTube ตอบ 403
+  `insufficient permissions`. เดิม `uploader.py` ทำแบบนี้และ fail เงียบทุกครั้ง
+  3 เดือน = 8 คอมเมนต์จาก 99k views. ตอนนี้เป็นหน้าที่ `seed_comments.py`
+- อย่าลด cut rate กลับเป็น 1 shot ต่อประโยค — `_plan_shots()` ซอยให้ภาพเปลี่ยนทุก ~2.3 วิ
+  และ shot สุดท้ายวนกลับ clip แรกเพื่อให้คลิปต่อกันเป็นวง
+- อย่าใส่ entity overlay ของบริษัท/แบรนด์/สถานที่ — Wikipedia คืนโลโก้หรือภาพหน้าจอ
+  ("Roblox" ได้ภาพคำสั่งศาลตุรกี) `_is_usable()` กรองด้วยสัดส่วนภาพ ใช้เฉพาะ "คน"
 - `project-brief.md` = historical artifact (2026-05-08), ไม่ใช่ current state — ใช้ไฟล์นี้แทน
