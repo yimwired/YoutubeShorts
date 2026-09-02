@@ -72,6 +72,27 @@ CONFIDENCE: <high|medium|low — ต่ำถ้าแหล่งข้อม�
 ทุกบรรทัดต้องมาจากผลค้นหาจริง ห้ามเดา ถ้าข้อไหนไม่มีข้อมูลจริงให้เขียนว่า unknown"""
 
 
+# The reject list above is a prompt rule, and a prompt rule is a request.
+# gemini-2.5-flash-lite -- which the daily run falls back to whenever flash
+# is out of quota, so most days -- answered a trend pick with "ที่มาของ
+# Bet365" while that prompt was in front of it. A gambling brand is exactly
+# the kind of topic that gets a video age-restricted or demonetised, so the
+# ban is enforced here as well, where the model does not get a vote.
+_BANNED = re.compile(
+    r"พนัน|หวย|คาสิโน|เดิมพัน|บาคาร่า|สล็อต|ล็อตเตอรี่"
+    r"|การเมือง|เลือกตั้ง|พรรคการเมือง|รัฐประหาร"
+    r"|bet365|betting|gambling|casino|lottery|poker|sportsbook"
+    r"|election|politician",
+    re.IGNORECASE,
+)
+
+
+def _is_banned(brief: "Brief") -> str | None:
+    """Return the matched term when a brief lands on banned ground."""
+    hit = _BANNED.search(f"{brief.topic} {brief.angle}")
+    return hit.group(0) if hit else None
+
+
 @dataclass
 class Brief:
     topic: str
@@ -175,6 +196,10 @@ def _parse_brief(text: str, source: str) -> Brief | None:
         return None
     if brief.confidence == "low":
         print(f"  [research] '{topic}' confidence low — rejected")
+        return None
+    banned = _is_banned(brief)
+    if banned:
+        print(f"  [research] '{topic}' hits the banned list ('{banned}') — rejected")
         return None
     return brief
 

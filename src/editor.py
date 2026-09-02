@@ -436,15 +436,38 @@ def _hook_size(text: str) -> int:
 
 
 def _fit_hook(text: str) -> str:
-    """Trim an over-long hook at a word boundary so it still reads."""
+    """Trim an over-long hook at a word boundary so it still reads.
+
+    Thai writes without spaces, so cutting on the last space either finds
+    nothing to cut on or throws away most of the line. Falling back to a
+    tokenizer keeps whole words -- and the hook is the one piece of text on
+    screen while the viewer decides whether to stay, so half a word there
+    is worse than a shorter hook.
+    """
     text = text.strip()
     if len(text) <= _HOOK_MAX_CHARS:
         return text
+
     cut = text[:_HOOK_MAX_CHARS]
-    if " " in cut:
-        cut = cut[:cut.rfind(" ")]
+    space = cut.rfind(" ")
+    if space >= _HOOK_MAX_CHARS // 2:
+        cut = cut[:space]
+    else:
+        try:
+            from pythainlp.tokenize import word_tokenize
+            kept = ""
+            for word in word_tokenize(text, engine="newmm", keep_whitespace=True):
+                if len(kept) + len(word) > _HOOK_MAX_CHARS:
+                    break
+                kept += word
+            if kept.strip():
+                cut = kept
+        except Exception:
+            pass       # a hard cut still beats no hook
+
+    cut = cut.rstrip(" ,.!?")
     print(f"  [hook] trimmed {len(text)} chars to {len(cut)}: {cut}")
-    return cut.rstrip(" ,.!?")
+    return cut
 
 
 def _hook_overlay(style: str, lang: str, text: str = None) -> list[str]:
