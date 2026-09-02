@@ -759,8 +759,13 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
             f"x=(w-text_w)/2:y=h*0.70"
         )
 
-    # Reveal flash: pattern interrupt at the start of the final segment.
-    reveal_start = boundaries[-2] if len(boundaries) >= 2 else 0.0
+    # Reveal flash: a pattern interrupt on the sentence that pays the video
+    # off. That is the third from last -- the last two are the second half of
+    # the reveal and the loop line back to the hook. Firing it on the final
+    # segment, as it used to, put the flash on the callback instead of on the
+    # thing being called back to.
+    reveal_idx   = max(len(boundaries) - 4, 1)
+    reveal_start = boundaries[reveal_idx] if len(boundaries) >= 3 else 0.0
     text_parts += _reveal_flash(content_style, reveal_start)
 
     # End card: loop line (drives replay) + comment-bait CTA, last ~3s.
