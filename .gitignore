@@ -32,3 +32,6 @@ venv/
 
 # Misc
 processed_image*
+
+# Overnight reports -- channel analytics, and this repo is public
+report_*.html
