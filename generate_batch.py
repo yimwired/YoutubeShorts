@@ -340,6 +340,12 @@ def generate_one(index: int, publish_at: str) -> None:
         "tags":           hashtags,
         "topic":          brief.topic,
         "brief_source":   brief.source,
+        # The research the script was allowed to draw on, verbatim. The
+        # no-invention rule is a prompt rule, and prompt rules do not hold on
+        # gemini-2.5-flash-lite, which is what the daily job falls back to
+        # most days. When a viewer disputes a fact, this is the only way to
+        # tell whether the writer made it up or the research did.
+        "brief_raw":      brief.raw,
         # Posted by seed_comments.py once the video is public -- see the note
         # in src/uploader.py about why it cannot go up at insert time.
         "cta":            cta_th,
@@ -351,7 +357,15 @@ def generate_one(index: int, publish_at: str) -> None:
         "notion_page_id": notion_page_id,
         "created_at":     datetime.now(BKK).isoformat(),
     }
-    job_path = os.path.join(QUEUE_DIR, f"job_{timestamp}_th.json")
+    # A dry run must not leave a job behind under the name the slot allocator
+    # reads. DRY_RUN skips the upload but still produced a queue file, and the
+    # workflow commits queue/ unconditionally, so a validation run parked an
+    # unuploaded job on the next publish slot -- _used_publish_slots counted
+    # it, the scheduled run stepped past to the day after, and that slot went
+    # out empty. The payload is still written, under a name nothing allocates
+    # against, so a dry run stays inspectable.
+    prefix   = "dryrun" if os.getenv("DRY_RUN") == "1" else "job"
+    job_path = os.path.join(QUEUE_DIR, f"{prefix}_{timestamp}_th.json")
     with open(job_path, "w", encoding="utf-8") as f:
         json.dump(job, f, ensure_ascii=False, indent=2)
     print(f"  Queued: {job_path}")

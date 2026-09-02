@@ -261,38 +261,29 @@ def _plan_shots(segments: list[tuple], n_clips: int) -> list[dict]:
 
 
 def _build_segment_filters(clips: list[str], segments: list[tuple],
-                            total_dur: float) -> tuple[list[str], list[str]]:
+                            total_dur: float) -> tuple[list[str], list[str], list[str]]:
     """Build per-shot trim/crop/pan filters.
 
-    Returns (filter_parts, shot_labels) for use in concat. A clip feeding more
-    than one shot is fanned out with `split` first -- an ffmpeg input pad can
-    only be consumed once, so reusing `[n:v]` directly is a filtergraph error
-    rather than a repeated clip.
+    Returns (filter_parts, shot_labels, shot_files). Each shot reads its own
+    ffmpeg input, so `shot_files` is the input list the caller must open --
+    a clip feeding three shots is opened three times.
+
+    Fanning one input out with `split` was the obvious alternative and it
+    does not survive contact with a short clip list: ffmpeg has to buffer
+    every frame between the earliest and latest trim across all branches, so
+    a nine-sentence script served by one clip built an eighteen-way split and
+    died on "Error while filtering: Cannot allocate memory". Separate inputs
+    each decode independently and stream.
     """
     shots = _plan_shots(segments, len(clips))
 
-    uses = {}
-    for sh in shots:
-        uses[sh["clip_idx"]] = uses.get(sh["clip_idx"], 0) + 1
-
-    filter_parts = []
-    # Fan out every clip that more than one shot draws from.
-    for clip_idx, n in sorted(uses.items()):
-        if n > 1:
-            outs = "".join(f"[c{clip_idx}_{k}]" for k in range(n))
-            filter_parts.append(f"[{clip_idx}:v]split={n}{outs}")
-
-    taken = {}
-    labels = []
+    filter_parts, labels, files = [], [], []
     for i, sh in enumerate(shots):
-        clip_idx = sh["clip_idx"]
+        src_path = clips[sh["clip_idx"]]
         dur      = sh["dur"]
-        clip_dur = _clip_duration(clips[clip_idx])
+        clip_dur = _clip_duration(src_path)
         label    = f"seg{i}"
-
-        k = taken.get(clip_idx, 0)
-        taken[clip_idx] = k + 1
-        src = f"[c{clip_idx}_{k}]" if uses[clip_idx] > 1 else f"[{clip_idx}:v]"
+        files.append(src_path)
 
         # Spread the sub-shots of one segment across the source clip so two
         # shots of the same sentence are not the same footage twice.
@@ -300,10 +291,10 @@ def _build_segment_filters(clips: list[str], segments: list[tuple],
         start_t = round(usable * (sh["sub"] + 0.5) / sh["of"], 3) if usable else 0.0
 
         if clip_dur >= dur:
-            head = f"{src}trim=start={start_t}:duration={dur}"
+            head = f"[{i}:v]trim=start={start_t}:duration={dur}"
         else:
             loops = int(dur / max(clip_dur, 0.1)) + 2
-            head  = (f"{src}loop=loop={loops}:size=9999:start=0,"
+            head  = (f"[{i}:v]loop=loop={loops}:size=9999:start=0,"
                      f"trim=duration={dur}")
 
         # Two sub-shots of one sentence come from the same clip, so a shared
@@ -321,7 +312,7 @@ def _build_segment_filters(clips: list[str], segments: list[tuple],
             f"crop=1080:1920:x='clip({drift},0,iw-ow)':y=(ih-oh)/2,setsar=1[{label}]"
         )
         labels.append(label)
-    return filter_parts, labels
+    return filter_parts, labels, files
 
 
 def prepend_title_card(video_path: str, thumb_path: str, title: str,
@@ -442,48 +433,65 @@ _HOOK_END = 2.6
 # drawtext does not wrap, so an over-long hook would run off both edges of
 # the frame -- the weaker model sometimes ignores the length rule in the
 # schema, and a silently clipped hook is worse than a trimmed one.
-_HOOK_MAX_CHARS = 30
+# Per visual line. The schema asks for 10-16 characters and the writer
+# overshoots almost every time -- 35 for a ChatGPT hook, 56 for a Bet365 one
+# -- so the real question is what to do with the overflow, not whether it
+# happens. Two lines at a readable size beat one line with the meaning cut
+# out of it: "ChatGPT เริ่มจากองค์กรไม่" is worse than no hook, because it
+# reads as a broken sentence at exactly the moment the viewer is deciding.
+_HOOK_LINE_CHARS = 22
+_HOOK_MAX_LINES  = 2
 
 
-def _hook_size(text: str) -> int:
-    """Pick a fontsize that keeps the hook on one line at 1080 wide."""
-    n = len(text)
-    return 132 if n <= 12 else 108 if n <= 18 else 88 if n <= 26 else 68
+def _hook_size(n_chars: int, n_lines: int) -> int:
+    """Fontsize that keeps `n_chars` on one line at 1080 wide.
+
+    Kanit-Bold runs about 0.55em per Thai glyph, so a line fits roughly
+    1000/(0.55*n) pixels. Two-line hooks take a step down so the block does
+    not swallow the top third of the frame.
+    """
+    base = (132 if n_chars <= 12 else
+            108 if n_chars <= 18 else
+             92 if n_chars <= 22 else 76)
+    return int(base * 0.88) if n_lines > 1 else base
 
 
-def _fit_hook(text: str) -> str:
-    """Trim an over-long hook at a word boundary so it still reads.
+def _fit_hook(text: str) -> list[str]:
+    """Wrap an over-long hook onto at most two lines, on word boundaries.
 
-    Thai writes without spaces, so cutting on the last space either finds
-    nothing to cut on or throws away most of the line. Falling back to a
-    tokenizer keeps whole words -- and the hook is the one piece of text on
-    screen while the viewer decides whether to stay, so half a word there
-    is worse than a shorter hook.
+    Thai writes without spaces, so a cut at the last space either finds
+    nothing or throws away most of the line; the tokenizer supplies the
+    boundaries instead. Only what will not fit in two lines is discarded.
     """
     text = text.strip()
-    if len(text) <= _HOOK_MAX_CHARS:
-        return text
+    if len(text) <= _HOOK_LINE_CHARS:
+        return [text]
 
-    cut = text[:_HOOK_MAX_CHARS]
-    space = cut.rfind(" ")
-    if space >= _HOOK_MAX_CHARS // 2:
-        cut = cut[:space]
-    else:
-        try:
-            from pythainlp.tokenize import word_tokenize
-            kept = ""
-            for word in word_tokenize(text, engine="newmm", keep_whitespace=True):
-                if len(kept) + len(word) > _HOOK_MAX_CHARS:
-                    break
-                kept += word
-            if kept.strip():
-                cut = kept
-        except Exception:
-            pass       # a hard cut still beats no hook
+    try:
+        from pythainlp.tokenize import word_tokenize
+        tokens = [t for t in word_tokenize(text, engine="newmm",
+                                           keep_whitespace=True) if t]
+    except Exception:
+        tokens = text.split(" ")
 
-    cut = cut.rstrip(" ,.!?")
-    print(f"  [hook] trimmed {len(text)} chars to {len(cut)}: {cut}")
-    return cut
+    lines, cur = [], ""
+    for tok in tokens:
+        if cur and len(cur) + len(tok) > _HOOK_LINE_CHARS:
+            lines.append(cur.strip())
+            if len(lines) == _HOOK_MAX_LINES:
+                cur = ""
+                break
+            cur = tok.lstrip()
+        else:
+            cur += tok
+    if cur.strip() and len(lines) < _HOOK_MAX_LINES:
+        lines.append(cur.strip())
+
+    lines = [l.rstrip(" ,.!?") for l in lines if l.strip()] or [text[:_HOOK_LINE_CHARS]]
+    if sum(len(l) for l in lines) < len(text.replace(" ", "")):
+        print(f"  [hook] {len(text)} chars wrapped to {len(lines)} line(s): "
+              f"{' / '.join(lines)}")
+    return lines
 
 
 def _hook_overlay(style: str, lang: str, text: str = None) -> list[str]:
@@ -507,23 +515,24 @@ def _hook_overlay(style: str, lang: str, text: str = None) -> list[str]:
     }
     color = _HOOK_COLORS.get(style, _HOOK_COLORS["trending"])
     if text and text.strip():
-        disp = text.strip().upper() if lang == "en" else text.strip()
-        disp = _fit_hook(disp)
+        raw   = text.strip().upper() if lang == "en" else text.strip()
+        lines = _fit_hook(raw)
     else:
-        fb   = FALLBACK.get(style, FALLBACK["trending"])
-        disp = fb["en"] if lang == "en" else fb["th"]
+        fb    = FALLBACK.get(style, FALLBACK["trending"])
+        lines = [fb["en"] if lang == "en" else fb["th"]]
 
     font = FONT_EN if lang == "en" else FONT_TH
-    base = _hook_size(disp)
-    esc  = _escape(disp)
+    base = _hook_size(max(len(l) for l in lines), len(lines))
     end  = _HOOK_END
     fade = round(end - 0.35, 2)
+    ESC  = "\\,"
 
-    # Contrast plate — sized off the largest of the three stages so it
+    # Contrast plate -- sized off the tallest stage and the line count so it
     # never clips the text mid-pop.
+    plate_h = int(base * 1.18 * 1.7 * (1 + 0.78 * (len(lines) - 1)))
     parts = [
-        f"drawbox=x=0:y=ih*0.13:w=iw:h={int(base * 1.18 * 1.7)}:"
-        f"color=black@0.42:t=fill:enable='between(t\\,0\\,{end})'"
+        f"drawbox=x=0:y=ih*0.13:w=iw:h={plate_h}:"
+        f"color=black@0.42:t=fill:enable='between(t{ESC}0{ESC}{end})'"
     ]
 
     stages = [
@@ -536,15 +545,21 @@ def _hook_overlay(style: str, lang: str, text: str = None) -> list[str]:
         # brief to fade and would just flicker.
         alpha = (f"if(lt(t,{fade}),1,({end}-t)/0.35)"
                  if scale == 1.00 else "1")
-        parts.append(
-            f"drawtext=fontfile='{font}':text='{esc}':"
-            f"fontsize={int(base * scale)}:fontcolor={color}:"
-            f"borderw=7:bordercolor=black:"
-            f"shadowcolor=black@0.8:shadowx=4:shadowy=4:"
-            f"x=(w-text_w)/2:y=h*0.18-text_h/2:"
-            f"alpha='{alpha}':enable='between(t\\,{t0}\\,{t1})'"
-        )
+        size = int(base * scale)
+        for i, line in enumerate(lines):
+            # Stack around h*0.18 so a two-line hook sits on the same band a
+            # one-line hook occupies rather than sliding down the frame.
+            offset = (i - (len(lines) - 1) / 2) * size * 1.24
+            parts.append(
+                f"drawtext=fontfile='{font}':text='{_escape(line)}':"
+                f"fontsize={size}:fontcolor={color}:"
+                f"borderw=7:bordercolor=black:"
+                f"shadowcolor=black@0.8:shadowx=4:shadowy=4:"
+                f"x=(w-text_w)/2:y=h*0.18-text_h/2+{offset:.0f}:"
+                f"alpha='{alpha}':enable='between(t{ESC}{t0}{ESC}{t1})'"
+            )
     return parts
+
 
 
 def _series_badge(lang: str, label: str, episode: int) -> list[str]:
@@ -713,8 +728,10 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
     boundaries = [0.0] + cut_points + [audio_dur]
     segments = [(boundaries[i], boundaries[i + 1]) for i in range(len(boundaries) - 1)]
 
-    # ── Per-segment video filters ────────────────────────────────
-    seg_filters, seg_labels = _build_segment_filters(all_clips, segments, audio_dur)
+    # ── Per-shot video filters ───────────────────────────────────
+    # shot_files, not all_clips, is what ffmpeg opens: one input per shot.
+    seg_filters, seg_labels, shot_files = _build_segment_filters(
+        all_clips, segments, audio_dur)
 
     # ── Concat all segments ──────────────────────────────────────
     concat_inputs = "".join(f"[{l}]" for l in seg_labels)
@@ -817,9 +834,9 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
 
     # ── Logo watermark overlay ───────────────────────────────────
     has_logo  = os.path.exists(LOGO_PATH)
-    n_clips   = len(all_clips)
-    audio_idx = n_clips
-    logo_idx  = n_clips + 1 if has_logo else None
+    n_inputs  = len(shot_files)
+    audio_idx = n_inputs
+    logo_idx  = n_inputs + 1 if has_logo else None
 
     base_fc = ";".join(seg_filters + [concat_filter])
 
@@ -832,7 +849,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
         if ip and os.path.exists(ip) and s is not None and e is not None and e > s:
             valid_overlays.append({"image_path": ip, "start": float(s), "end": float(e)})
 
-    first_overlay_idx = (logo_idx + 1) if has_logo else (n_clips + 1)
+    first_overlay_idx = (logo_idx + 1) if has_logo else (n_inputs + 1)
 
     def _build_overlay_chain(in_label: str) -> tuple[str, str]:
         """Return (filter_fragment, final_label) that overlays each entity image
@@ -876,7 +893,7 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
 
     # ── FFmpeg command ───────────────────────────────────────────
     cmd = ["ffmpeg", "-y"]
-    for clip in all_clips:
+    for clip in shot_files:
         cmd += ["-i", clip]
     cmd += ["-i", final_audio]
     if has_logo:
