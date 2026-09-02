@@ -558,6 +558,23 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
     if sentences and not (sentences[0].get("ai_prompt") or "").strip():
         sentences[0]["ai_prompt"] = (data.get("thumbnail_prompt") or "").strip()
 
+    # "no living people" is in ai_prompt_rules and gets ignored: a Bet365
+    # script asked flux-pro for "A determined woman, Denise Coates, looking
+    # at financial charts" and got a synthetic portrait of a real, living
+    # person presented as her. The scene is fine; the name is what makes it
+    # a fabricated likeness, so the name comes out and the scene stays.
+    for name in [(e.get("name") or "").strip()
+                 for e in (data.get("entities") or [])]:
+        if len(name) < 3:
+            continue
+        for sentence in sentences:
+            prompt = sentence.get("ai_prompt") or ""
+            if name.lower() in prompt.lower():
+                cleaned = _re.sub(_re.escape(name), "", prompt, flags=_re.I)
+                cleaned = _re.sub(r"\s*,\s*,", ",", cleaned)
+                sentence["ai_prompt"] = _re.sub(r"\s{2,}", " ", cleaned).strip(" ,")
+                print(f"[generator] dropped '{name}' from an image prompt")
+
     data["category"]     = brief.topic
     data["brief_source"] = brief.source
     data["research_raw"] = brief.raw

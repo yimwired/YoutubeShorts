@@ -12,6 +12,7 @@ video instead of against reasoning about the filter graph.
 Output: output/test_explainer_<ts>.mp4
 """
 
+import json
 import os
 import sys
 import time
@@ -21,7 +22,8 @@ sys.stdout.reconfigure(encoding="utf-8")
 from dotenv import load_dotenv
 load_dotenv()
 
-from generate_batch import EXPLAINER_CATEGORIES, _build_entity_overlays
+from generate_batch import (EXPLAINER_CATEGORIES, SERIES_NAME,
+                            _build_entity_overlays)
 from src.ai_broll import replace_with_ai_clips
 from main import make_video, _sync_th_subs
 from src.footage import fetch_multiple_clips
@@ -34,6 +36,15 @@ from src.tts import generate_voiceover
 
 OUTPUT_DIR = "output"
 STYLE      = "explainer"
+
+
+def _episode_preview() -> int:
+    """Next episode number, without writing the counter back."""
+    try:
+        with open("series_state.json", encoding="utf-8") as f:
+            return json.load(f).get("explainer", 0) + 1
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return 0
 
 
 def main() -> int:
@@ -90,6 +101,10 @@ def main() -> int:
                        hook_text=data.get("hook_th"),
                        loop_text=data.get("loop_th"),
                        cta_text=data.get("cta_th"),
+                       # Read the episode counter without advancing it -- a
+                       # test render should look like production, not consume
+                       # a number from it.
+                       series_label=SERIES_NAME, episode=_episode_preview(),
                        title_card=False, outro_card=False)
 
     test_path = os.path.join(OUTPUT_DIR, f"test_explainer_{timestamp}.mp4")
