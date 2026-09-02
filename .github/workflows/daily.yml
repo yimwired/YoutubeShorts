@@ -13,7 +13,21 @@ on:
   # (YouTube only). Local FactSnapBatch task is disabled.
   schedule:
     - cron: '0 23 * * *'   # 06:00 Bangkok (UTC+7)
+    # Backup pass, one hour before the noon publish. GitHub routinely fires
+    # the 23:00 cron one to four hours late, so this is the last point a
+    # failed morning run can still be recovered in time. It exits without
+    # generating whenever the morning run already filled today's slot
+    # (ONLY_TODAY below), so on a normal day it costs a few runner-seconds.
+    - cron: '0 4 * * *'    # 11:00 Bangkok (UTC+7)
   workflow_dispatch:        # manual trigger from GitHub UI
+
+# A delayed morning run and the backup run can otherwise overlap and queue
+# two videos against the same publish time. Serialised, the second one
+# starts after the first has written its job file, sees the slot taken and
+# stops.
+concurrency:
+  group: daily-video
+  cancel-in-progress: false
 
 jobs:
   generate:
@@ -75,6 +89,7 @@ jobs:
           TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_VIDEO_LOG_DB_ID: ${{ secrets.NOTION_VIDEO_LOG_DB_ID }}
+          ONLY_TODAY: ${{ github.event.schedule == '0 4 * * *' && '1' || '0' }}
         # One Thai video a day, published at 12:00 Bangkok. Generating at
         # 06:00 leaves six hours of slack for a research or TTS retry
         # before the scheduled publish time.

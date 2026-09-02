@@ -83,7 +83,11 @@ def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
     is_narrative = style == "narrative"
     pause_threshold = 0.6 if is_narrative else 0.45
     max_words = 999  # whole sentence stays on one line
-    max_chars = 22 if is_narrative else 18  # wrap long sentences across visual lines
+    # Wrap width per visual line. Explainer runs wider than the rest: at 18
+    # a thirteen-word sentence stacked five lines deep and covered the middle
+    # of the frame, which is the footage the sentence is describing. Twenty
+    # Thai glyphs of Kanit-Bold at 76px still clear the 1080 frame.
+    max_chars = 22 if is_narrative else 20 if style == "explainer" else 18
 
     lines, current = [], []
     for i, w in enumerate(words):
@@ -504,6 +508,28 @@ def _hook_overlay(style: str, lang: str, text: str = None) -> list[str]:
     return parts
 
 
+def _series_badge(lang: str, label: str, episode: int) -> list[str]:
+    """A small standing mark next to the logo, for the whole video.
+
+    The channel converts 0.12% of its viewers into subscribers, against a
+    0.3-1% norm for Shorts. A viewer who likes one video has nothing telling
+    them there are forty more of the same thing -- every Short reads as a
+    standalone fact. An episode number is the cheapest way to say "this is a
+    series": it sits in the corner, costs no retention, and does not spend
+    three seconds of the video asking for a follow.
+    """
+    if not label:
+        return []
+    font = FONT_EN if lang == "en" else FONT_TH
+    text = f"{label} · EP.{episode}" if episode else label
+    return [
+        f"drawtext=fontfile='{font}':text='{_escape(text)}':"
+        f"fontsize=42:fontcolor=white@0.92:"
+        f"borderw=4:bordercolor=black@0.75:"
+        f"x=148:y=52"
+    ]
+
+
 def _endcard_overlay(style: str, lang: str, loop_text: str,
                      cta_text: str, audio_dur: float) -> list[str]:
     """Drawtext filters for the final ~3 seconds: a loop line that throws the
@@ -566,7 +592,9 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
                  entity_overlays: list[dict] = None,
                  hook_text: str = None,
                  loop_text: str = None,
-                 cta_text: str = None) -> str:
+                 cta_text: str = None,
+                 series_label: str = None,
+                 episode: int = 0) -> str:
 
     # Render the whole voiceover. The previous 62.0s ceiling truncated it
     # instead, and both failure modes reached the channel: a 64.0s Thai
@@ -714,6 +742,9 @@ def create_short(video_path: str, audio_path: str, title: str, script: str,
 
     # End card: loop line (drives replay) + comment-bait CTA, last ~3s.
     text_parts += _endcard_overlay(content_style, lang, loop_text, cta_text, audio_dur)
+
+    # Standing series mark beside the logo watermark.
+    text_parts += _series_badge(lang, series_label, episode)
 
     # Color boost + vignette → [vtxt]
     text_parts.append("eq=saturation=1.35:contrast=1.08:brightness=0.02")

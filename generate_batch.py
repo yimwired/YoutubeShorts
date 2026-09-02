@@ -51,6 +51,13 @@ os.makedirs(QUEUE_DIR, exist_ok=True)
 _SERIES_STATE_FILE = "series_state.json"
 _SERIES_STOPWORDS  = {"the", "of", "that", "and", "a", "to", "in", "we", "are", "is"}
 
+# The channel runs one format now, so it gets one series name and one running
+# episode number. The tag used to be derived per bucket, which on the current
+# buckets produced "TREND" and "EVERGREEN" -- printed on the thumbnail, where
+# it told a viewer nothing, and split the count across two arbitrary halves.
+SERIES_NAME = "ที่มาของ"
+SERIES_KEY  = "explainer"
+
 # Buckets for the days no live trend is worth explaining. Every entry is
 # phrased as an origin question, because "where did this come from" is the
 # format -- a bucket like "space facts" would pull the writer back toward
@@ -207,8 +214,10 @@ def _description_with_tags(description: str, tags: list, n: int = 5) -> str:
     read. The title now gets all forty of them.
     """
     picked = ["#" + t for t in tags if t.lower() != "shorts"][:n]
-    line   = " ".join(["#Shorts"] + picked)
-    return f"{description.rstrip()}" + chr(10) + chr(10) + line
+    # The model already signs off its Thai description with "#Shorts"; leaving
+    # it there would print the tag twice in a row.
+    body = description.replace("#Shorts", "").replace("#shorts", "").rstrip()
+    return body + chr(10) + chr(10) + " ".join(["#Shorts"] + picked)
 
 
 def generate_one(index: int, publish_at: str) -> None:
@@ -241,8 +250,8 @@ def generate_one(index: int, publish_at: str) -> None:
     cta_th    = data.get("cta_th")  or ""
     thumb_txt = data.get("thumb_text_th") or hook_th
 
-    series_tag = _series_tag(brief.source)
-    episode    = _bump_series(brief.source)
+    series_tag = SERIES_NAME
+    episode    = _bump_series(SERIES_KEY)
     print(f"  Topic : {brief.topic}  ({brief.source})")
     print(f"  Title : {title_th}")
     print(f"  Hook  : {hook_th}   |  Series: {series_tag} #{episode}")
@@ -302,6 +311,7 @@ def generate_one(index: int, publish_at: str) -> None:
                           entity_overlays=overlays,
                           hook_text=hook_th, loop_text=loop_th,
                           cta_text=cta_th,
+                          series_label=SERIES_NAME, episode=episode,
                           title_card=False, outro_card=False)
 
     # Lead the description with the comment-bait question: it is the first
@@ -394,6 +404,19 @@ if __name__ == "__main__":
 
     used  = _used_publish_slots()
     slots = _future_slots(used, n)
+
+    # The backup run exists so a failed morning run does not cost the whole
+    # day -- three consecutive mornings failed before it was added. It must
+    # not quietly produce tomorrow's video on the days the morning run worked,
+    # so it only proceeds while today's slot is still empty.
+    if os.getenv("ONLY_TODAY") == "1":
+        today = datetime.now(BKK).date()
+        slots = [x for x in slots
+                 if datetime.fromisoformat(x).date() == today]
+        if not slots:
+            print("[Batch] today's slot is already filled — nothing to do")
+            sys.exit(0)
+
     print(f"  Existing queue slots: {len(used)}")
     print(f"  Planned slots : {[s[:16] for s in slots]}")
 
