@@ -57,3 +57,9 @@ jobs:
           git diff --staged --quiet || git commit -m "chore: A/B swap + analytics state [skip ci]"
           git pull --rebase origin main
           git push
+
+      # Last, so a quiet channel is reported without costing the state commit.
+      # This workflow has not missed a day, which is why the watchdog lives
+      # here rather than in the job it is watching.
+      - name: Warn if the channel has gone quiet
+        run: python check_pipeline.py --hours 48
