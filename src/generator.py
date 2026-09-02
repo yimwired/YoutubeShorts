@@ -427,7 +427,12 @@ _EXPLAINER_SCHEMA = """<output_schema>
 
 <ai_prompt_rules>
 ใส่ ai_prompt ให้ 3-4 ประโยค ที่เหลือเว้นเป็น ""
-เลือกประโยคที่ stock footage หาไม่ได้จริงๆ เรียงตามความสำคัญ:
+- ประโยคที่ 1 (HOOK) ต้องมี ai_prompt เสมอ ห้ามเว้นว่าง
+  เฟรมแรกคือจุดที่คนตัดสินใจว่าจะดูต่อหรือปัดทิ้ง คลิป stock ทั่วไป
+  ("คนนั่งหน้าคอม") ทำให้คลิปนี้หน้าตาเหมือนคลิปอื่นทุกคลิปในฟีด
+  ภาพนี้ต้องเป็นภาพของเรื่องนี้เรื่องเดียว และเป็นภาพที่แปลกตาที่สุดในคลิป
+  (ประโยคสุดท้ายวนกลับมาใช้ภาพนี้ซ้ำ เพื่อให้คลิปต่อกันเป็นวง)
+ที่เหลือเลือกประโยคที่ stock footage หาไม่ได้จริงๆ เรียงตามความสำคัญ:
 - ประโยค ORIGIN ทุกประโยคที่เป็นเหตุการณ์เฉพาะเจาะจงในอดีต (คนนี้ ปีนี้ ที่นี่)
   stock ไม่มีทางมีภาพยุคนั้น มันจะให้ภาพปัจจุบันมาแทนแล้วผิดยุคทันที
 - ประโยค REVEAL ที่เป็นจุดเฉลย
@@ -544,6 +549,14 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
             data[key] = _clean_thai(data[key])
     for s in sentences:
         s["text_th"] = _clean_thai(s.get("text_th", ""))
+
+    # The opening frame decides whether the video is watched at all, so it
+    # does not get to fall back to whatever Pexels returns for a generic
+    # keyword. If the writer left the hook without an image prompt, the
+    # thumbnail prompt stands in -- it already describes this topic as a
+    # single high-contrast subject, which is exactly the brief.
+    if sentences and not (sentences[0].get("ai_prompt") or "").strip():
+        sentences[0]["ai_prompt"] = (data.get("thumbnail_prompt") or "").strip()
 
     data["category"]     = brief.topic
     data["brief_source"] = brief.source
