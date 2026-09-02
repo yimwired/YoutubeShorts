@@ -20,6 +20,10 @@ on:
     # (ONLY_TODAY below), so on a normal day it costs a few runner-seconds.
     - cron: '0 4 * * *'    # 11:00 Bangkok (UTC+7)
   workflow_dispatch:        # manual trigger from GitHub UI
+    inputs:
+      dry_run:
+        description: 'Render everything but never touch YouTube or Notion ("1" = dry run)'
+        default: '0'
 
 # A delayed morning run and the backup run can otherwise overlap and queue
 # two videos against the same publish time. Serialised, the second one
@@ -90,6 +94,10 @@ jobs:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_VIDEO_LOG_DB_ID: ${{ secrets.NOTION_VIDEO_LOG_DB_ID }}
           ONLY_TODAY: ${{ github.event.schedule == '0 4 * * *' && '1' || '0' }}
+          # Scheduled runs always publish. A manual run can render the whole
+          # pipeline on the real runner without spending a publish slot,
+          # which is how a change gets checked before the cron meets it.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || '0' }}
         # One Thai video a day, published at 12:00 Bangkok. Generating at
         # 06:00 leaves six hours of slack for a research or TTS retry
         # before the scheduled publish time.
