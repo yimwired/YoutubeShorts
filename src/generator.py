@@ -469,18 +469,47 @@ SYSTEM_PROMPT_HUMAN = """<role>
 
 <visual_rules>
 คลิปนี้ใช้ฟุตเทจคนจริงล้วน ไม่มีภาพ generate ไม่มีกราฟ ไม่มีแผนภาพ
+keyword ทุกอันเป็นภาษาอังกฤษ และต้องมีคนอยู่ในเฟรม
+ยกเว้นได้หนึ่งภาพ ถ้าประโยคนั้นอธิบายกลไกแล้วภาพของกลไกจริงเล่าได้ดีกว่า
+(เช่น ไอน้ำลอยขึ้นจากผิวน้ำ) ภาพยกเว้นนั้นต้องอยู่ตรงกลางคลิป
+ประโยคแรกกับประโยคสุดท้ายต้องมีคนเสมอ และต้องเป็นคนคนเดียวกันทำสิ่งเดียวกัน
+เพราะสองภาพนั้นคือจุดที่คลิปวนกลับมาบรรจบ
 
-keyword ทุกอันต้องเป็นภาษาอังกฤษ และ**ต้องมีคนอยู่ในเฟรม**เสมอ
-เขียนแบบ: ใคร + กำลังทำอะไร + ที่ไหน
-ตัวอย่างดี: "woman checking phone in bed at night"
-             "man yawning at desk morning office"
-             "young woman looking at herself in mirror bathroom"
-ตัวอย่างแย่: "sleep cycle" (นามธรรม) "brain scan" (ไม่มีคน)
-             "phone screen closeup" (ไม่เห็นคน)
+กฎข้อที่หนึ่ง: **ถ่ายการกระทำ ไม่ใช่ความรู้สึก**
+กล้องถ่าย "คิด" ไม่ได้ ถ่าย "กังวล" ไม่ได้ ถ่าย "จำได้" ไม่ได้
+คลังฟุตเทจตอบคำพวกนี้ด้วยภาพเดียวกันหมด คือคนนั่งนิ่งมองออกไปนอกเฟรม
+สามภาพแบบนั้นติดกันคือกลางคลิปที่คนดูไม่รู้ว่ากำลังดูอะไรอยู่
 
-fallback ก็ต้องมีคนเหมือนกัน เขียนสั้นๆ เช่น "person sleeping" "woman thinking"
+ห้ามใช้คำพวกนี้ใน keyword เด็ดขาด (โค้ดเช็คคำพวกนี้อยู่ ติดแล้วต้องเขียนใหม่):
+thinking, thoughtful, concentration, focused, feeling, emotion, mood,
+memory, mind, relaxed, calm, anxious, stressed, confused, relieved, curious
+
+ประโยคที่อธิบายกลไกในหัว ให้ใช้ภาพของ **สิ่งที่คนคนนั้นทำออกมา** เพราะกลไกนั้น
+ไม่ใช่ภาพของกลไก:
+- "สมองตีความกล้ามเนื้อกระตุกเป็นการสั่นของมือถือ"
+  ห้าม: person thinking about phone
+  เอา:  man pulling phone from pocket on a busy sidewalk
+- "ร่างกายจำจังหวะเดิมได้จนทำเองอัตโนมัติ"
+  ห้าม: woman feeling habit
+  เอา:  woman reaching for a light switch without looking
+
+กฎข้อที่สอง: **ทั้งคลิปต้องเป็นคนคนเดียวในสถานที่เดียว**
+เลือกคนหนึ่งคน (เพศไหน วัยไหน) กับสถานที่หนึ่งแห่งตั้งแต่ประโยคแรก
+แล้วใช้แบบเดียวกันทุกประโยค เปลี่ยนแค่สิ่งที่เขากำลังทำ
+หกภาพจากหกสถานที่กับหกคน ทำให้คลิปดูเหมือนสไลด์โชว์ ไม่ใช่เรื่องของใครคนหนึ่ง
+ตัวอย่างชุดที่ถูก (คนเดียว ห้องเดียว):
+  young man lying in bed scrolling phone at night
+  young man putting phone face down on the bed
+  young man reaching for phone in the dark bedroom
+  young man sitting up in bed checking a blank phone screen
+
+เขียน keyword แบบ: ใคร + กำลังทำอะไร + ที่ไหน
+fallback เขียนสั้นกว่าแต่ยังต้องมีคนกับการกระทำ เช่น "man reaching for phone"
+ห้าม fallback เป็นคำเดียวลอยๆ อย่าง "person" หรือ "phone"
+
 ai_prompt เว้นเป็นสตริงว่างทุกประโยค ห้ามใส่อะไรเลย
-thumbnail_keyword ต้องมีคนในเฟรมเช่นกัน thumbnail_prompt เว้นว่าง
+thumbnail_keyword ต้องเป็นคนคนเดียวกันกำลังทำสิ่งที่ประโยคแรกพูดถึง
+thumbnail_prompt เว้นว่าง
 entities ต้องเป็น array ว่างเสมอ format นี้ไม่มีคนดังในเรื่อง
 </visual_rules>"""
 
@@ -489,9 +518,76 @@ entities ต้องเป็น array ว่างเสมอ format นี�
 # longest were the two that reached the fewest viewers. Prose cannot hold a
 # number (the same lesson as the topic ban), so the count is checked here and
 # a miss buys another attempt with the real figure fed back.
-EXPLAINER_WORDS_MIN = 58
+EXPLAINER_WORDS_MIN = 54
 EXPLAINER_WORDS_MAX = 72
 SEC_PER_THAI_WORD   = 0.47   # measured on Gemini TTS Thai, pauses included
+
+
+# Stock libraries answer a query about a state of mind with the same shot
+# every time: a person sitting still, looking off-camera. Three of those in a
+# row is what the middle of the first human-format render turned into, and
+# that middle is where the retention curve already falls. A camera cannot
+# film "thinking"; it can only film what thinking makes someone do.
+_ABSTRACT_FOOTAGE = _re.compile(
+    r"\b(thinking|thought|thoughtful|contemplating|pondering|wondering|"
+    r"concentration|concentrating|focus|focused|realizing|realization|"
+    r"feeling|feelings|emotion|emotional|mood|memory|awareness|mind|"
+    r"relaxed|relaxing|calm|anxious|anxiety|stress|stressed|worried|"
+    r"confused|relieved|curious|nostalgic|reflective|introspective|"
+    r"agitated|overwhelmed|frustrated|bored|distracted|lonely|content)\b",
+    _re.IGNORECASE)
+
+# "looking anxious" is a state; "looking at a phone" is an action. Naming
+# moods one at a time loses -- there are always more of them -- so the
+# construction itself is caught, with the prepositions that make it an
+# action carved out.
+_LOOKING_STATE = _re.compile(
+    r"\blooking\s+(?!at\b|for\b|into\b|through\b|down\b|up\b|over\b"
+    r"|around\b|out\b|away\b|back\b|in\b|toward)\w+",
+    _re.IGNORECASE)
+
+
+def find_abstract_keywords(data: dict) -> list[str]:
+    """Footage keywords that name a state of mind rather than an action."""
+    hits = []
+    for sentence in data.get("sentences", []):
+        for field in ("keyword", "fallback"):
+            value = sentence.get(field) or ""
+            if _ABSTRACT_FOOTAGE.search(value) or _LOOKING_STATE.search(value):
+                hits.append(value)
+    return hits
+
+
+# Words that put a body in the frame. A stock query without one of these
+# comes back as an object or a landscape, and a clip of objects is the
+# explainer format wearing this one's badge.
+_PEOPLE = _re.compile(
+    r"\b(person|people|man|men|woman|women|guy|girl|boy|child|children|kid|"
+    r"kids|teen|teenager|adult|someone|somebody|couple|family|friends|"
+    r"student|students|worker|customer|passenger|crowd|hand|hands|face|"
+    r"finger|fingers|arm|arms|feet|foot|parent|mother|father|baby)\b",
+    _re.IGNORECASE)
+
+
+def find_faceless_keywords(data: dict) -> list[str]:
+    """Footage keywords with nobody in them, first and last shot included.
+
+    One is allowed anywhere in the middle -- the sentence explaining a
+    mechanism is sometimes served best by the mechanism itself. The
+    opening and closing shots are not negotiable: they are the same
+    person, and the loop only reads as a loop because they match.
+    """
+    sentences = data.get("sentences", [])
+    faceless = [(i, s.get("keyword") or "")
+                for i, s in enumerate(sentences)
+                if not _PEOPLE.search(s.get("keyword") or "")]
+    if not faceless:
+        return []
+
+    last = len(sentences) - 1
+    bookends = [kw for i, kw in faceless if i in (0, last)]
+    middle   = [kw for i, kw in faceless if i not in (0, last)]
+    return bookends + middle[1:]
 
 
 def count_thai_words(text: str) -> int:
@@ -581,12 +677,18 @@ cta_th ต้องเลือกหนึ่งแบบจากสี่แ�
 </field_rules>"""
 
 
-def _write_thai_script(system_prompt: str, prompt: str) -> dict:
+def _write_thai_script(system_prompt: str, prompt: str,
+                       extra_check=None) -> dict:
     """Ask for a Thai script and return the parsed payload.
 
     Shared by both daily formats -- they differ in what they ask for, not
     in how the asking is retried. See the comments inside for why the
     model list and the word check are shaped the way they are.
+
+    `extra_check` is an optional callable taking the parsed payload and
+    returning a Thai correction note, or None when the payload is fine. It
+    runs after the word count and shares the same retry budget, so a format
+    with a rule of its own does not need a second retry loop.
     """
     messages = [
         {"role": "system", "content": system_prompt},
@@ -630,23 +732,34 @@ def _write_thai_script(system_prompt: str, prompt: str) -> dict:
             print(f"[generator] {model}: {words} Thai words "
                   f"(~{words * SEC_PER_THAI_WORD:.0f}s speech)")
 
-            if EXPLAINER_WORDS_MIN <= words <= EXPLAINER_WORDS_MAX:
+            if not EXPLAINER_WORDS_MIN <= words <= EXPLAINER_WORDS_MAX:
+                direction = ("ยาวเกินไป" if words > EXPLAINER_WORDS_MAX
+                             else "สั้นเกินไป")
+                note = (
+                    f"\n\nสคริปต์รอบที่แล้วนับได้ {words} คำไทย ซึ่ง{direction} "
+                    f"เขียนใหม่ทั้งสคริปต์ให้รวมกันได้ {EXPLAINER_WORDS_MIN}-"
+                    f"{EXPLAINER_WORDS_MAX} คำ ยังต้องเป็นหกประโยคเท่าเดิม "
+                    f"ตัดคำในประโยคให้สั้นลงทุกประโยค ห้ามตัดประโยคทิ้ง")
+            else:
+                note = extra_check(candidate) if extra_check else None
+
+            if note is None:
                 data = candidate
                 break
 
+            # Rank misses so a script that only missed the word budget beats
+            # one that failed a format rule: shipping the closest must not
+            # mean shipping the one the checks already turned down.
             target = (EXPLAINER_WORDS_MIN + EXPLAINER_WORDS_MAX) // 2
-            if closest is None or abs(words - target) < closest[0]:
-                closest = (abs(words - target), candidate)
-            direction = "ยาวเกินไป" if words > EXPLAINER_WORDS_MAX else "สั้นเกินไป"
-            retry_note = (
-                f"\n\nสคริปต์รอบที่แล้วนับได้ {words} คำไทย ซึ่ง{direction} "
-                f"เขียนใหม่ทั้งสคริปต์ให้รวมกันได้ {EXPLAINER_WORDS_MIN}-"
-                f"{EXPLAINER_WORDS_MAX} คำ ยังต้องเป็นหกประโยคเท่าเดิม "
-                f"ตัดคำในประโยคให้สั้นลงทุกประโยค ห้ามตัดประโยคทิ้ง")
+            failed_rule = extra_check is not None and extra_check(candidate)
+            rank = (bool(failed_rule), abs(words - target))
+            if closest is None or rank < closest[0]:
+                closest = (rank, candidate)
+            retry_note = note
 
     if data is None and closest is not None:
         data = closest[1]
-        print("[generator] no attempt hit the word budget — shipping the closest")
+        print("[generator] no attempt passed every check — shipping the closest")
 
     if data is None:
         print("[generator] falling back to Groq for the script")
@@ -763,7 +876,31 @@ def generate_human_script(brief, used_titles: list = None) -> dict:
         + _EXPLAINER_SCHEMA
     )
 
-    data = _write_thai_script(SYSTEM_PROMPT_HUMAN, prompt)
+    def _check_footage(candidate: dict) -> str | None:
+        """Reject keywords that film a mood, or a frame with nobody in it."""
+        moods = find_abstract_keywords(candidate)
+        if moods:
+            print(f"[generator] abstract footage keywords: {moods}")
+            return ("\n\nkeyword พวกนี้ใช้ไม่ได้เพราะกล้องถ่ายไม่ได้: "
+                    + ", ".join(f'"{h}"' for h in moods[:6])
+                    + "\nเขียน keyword ใหม่ทุกอันให้เป็นการกระทำที่เห็นด้วยตา "
+                      "ประโยคที่อธิบายกลไกในหัว ให้ใช้ภาพของสิ่งที่คนคนนั้น"
+                      "ทำออกมาเพราะกลไกนั้น ไม่ใช่ภาพของกลไก "
+                      "เช่นแทนที่จะเป็น person thinking ให้เป็น "
+                      "man stopping mid-step on a busy sidewalk")
+
+        faceless = find_faceless_keywords(candidate)
+        if faceless:
+            print(f"[generator] keywords with nobody in frame: {faceless}")
+            return ("\n\nkeyword พวกนี้ไม่มีคนอยู่ในเฟรม: "
+                    + ", ".join(f'"{h}"' for h in faceless[:6])
+                    + "\nเขียนใหม่ให้มีคนกำลังทำอะไรสักอย่างอยู่ในภาพ "
+                      "ประโยคแรกกับประโยคสุดท้ายต้องเป็นคนคนเดียวกัน"
+                      "ทำสิ่งเดียวกัน เพราะสองภาพนี้คือจุดที่คลิปวนกลับมาบรรจบ "
+                      "ภาพที่ไม่มีคนได้มากสุดหนึ่งภาพ และต้องอยู่ตรงกลางเท่านั้น")
+
+    data = _write_thai_script(SYSTEM_PROMPT_HUMAN, prompt,
+                              extra_check=_check_footage)
 
     # Every shot in this format is stock footage of a real person, which is
     # the whole premise -- a generated still would put an AI face in the one

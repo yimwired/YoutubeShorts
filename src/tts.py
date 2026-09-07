@@ -213,7 +213,8 @@ def generate_voiceover(script: str, output_path: str,
         if (sentences and len(sentences) > 1
                 and os.getenv("GEMINI_TTS_DISABLED") != "1"):
             from src.tts_gemini import generate_thai
-            ok, boundaries = generate_thai(sentences, output_path)
+            ok, boundaries = generate_thai(sentences, output_path,
+                                           style=style)
             if ok:
                 return output_path, boundaries
             print("  [TTS] Gemini TTS unavailable — falling back to edge-tts")

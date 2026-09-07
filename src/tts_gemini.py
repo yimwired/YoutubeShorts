@@ -97,14 +97,33 @@ _SEP = os.getenv("GEMINI_TTS_SEP", " ??? \n")
 # the separator reliably produces longer ones.
 _BREAK_SILENCE = 0.45
 
-_STYLE = (
-    "อ่านข้อความต่อไปนี้เป็นภาษาไทย ด้วยน้ำเสียงแบบเพื่อนเล่าเรื่องให้ฟัง "
-    "สนุก กระตือรือร้นกำลังดี ไม่ใช่ผู้ประกาศข่าว พูดจังหวะกระชับ ไม่ลากเสียง "
-    "เน้นเสียงตรงคำที่น่าตกใจ "
+# The separator instruction is the half that cannot change -- the whole
+# subtitle timing chain depends on those pauses being audible and unspoken.
+_SEP_RULE = (
     "สำคัญมาก: หยุดเงียบสนิทหนึ่งวินาทีทุกครั้งที่เจอเครื่องหมาย ??? "
     "และห้ามอ่านออกเสียงเครื่องหมาย ??? เด็ดขาด "
     "ห้ามอ่านคำสั่งนี้ อ่านเฉพาะข้อความหลังบรรทัดนี้:\n\n"
 )
+
+# One narrator, two registers. The explainer is telling you about something
+# out there; the morning format is telling you about yourself, and the same
+# bright delivery on "you do this every day" lands as a presenter reading a
+# fact rather than someone who noticed.
+_STYLES = {
+    "explainer": (
+        "อ่านข้อความต่อไปนี้เป็นภาษาไทย ด้วยน้ำเสียงแบบเพื่อนเล่าเรื่องให้ฟัง "
+        "สนุก กระตือรือร้นกำลังดี ไม่ใช่ผู้ประกาศข่าว พูดจังหวะกระชับ ไม่ลากเสียง "
+        "เน้นเสียงตรงคำที่น่าตกใจ "
+    ),
+    "human": (
+        "อ่านข้อความต่อไปนี้เป็นภาษาไทย ด้วยน้ำเสียงแบบคนที่เพิ่งสังเกตเห็นอะไรบางอย่าง "
+        "แล้วหันมาบอกเพื่อนที่นั่งข้างๆ พูดใกล้ตัว ไม่ประกาศ ไม่ตะโกน "
+        "ประโยคแรกพูดเหมือนกำลังจับได้ว่าอีกฝ่ายก็ทำแบบนี้ "
+        "ช่วงกลางเล่าเรียบๆ ให้ข้อมูลเดินไปเรื่อยๆ ประโยคเฉลยค่อยเน้นเสียงขึ้นมา "
+        "พูดจังหวะกระชับ ไม่ลากเสียง "
+    ),
+}
+_STYLE = _STYLES["explainer"] + _SEP_RULE   # default for callers with no style
 
 
 def _client():
@@ -116,7 +135,8 @@ def _client():
     return genai.Client(api_key=key) if key else None
 
 
-def _synthesize(text: str, voice: str) -> bytes | None:
+def _synthesize(text: str, voice: str,
+                style: str = "explainer") -> bytes | None:
     """One TTS request with backoff. Returns raw 24kHz mono PCM."""
     client = _client()
     if client is None:
@@ -135,8 +155,9 @@ def _synthesize(text: str, voice: str) -> bytes | None:
 
     for attempt in range(1, _RETRIES + 1):
         try:
+            instruction = _STYLES.get(style, _STYLES["explainer"]) + _SEP_RULE
             resp = client.models.generate_content(
-                model=_MODEL, contents=_STYLE + text, config=config)
+                model=_MODEL, contents=instruction + text, config=config)
             # Tracked separately from the text models: this is the only
             # call in the pipeline that is actually billed, so it is the
             # one worth watching in rate_usage.json.
@@ -184,21 +205,24 @@ def _pcm_to_mp3(pcm: bytes, mp3_path: str) -> bool:
             pass
 
 
-def generate_thai(sentences: list[str], output_path: str
-                  ) -> tuple[bool, list[dict]]:
+def generate_thai(sentences: list[str], output_path: str,
+                  style: str = "explainer") -> tuple[bool, list[dict]]:
     """Render `sentences` to `output_path` as one take.
 
     Returns (ok, boundaries). `boundaries` holds one {start, end} per
     sentence and is empty when the pauses could not be resolved — the
     caller should then treat the take as unusable for karaoke timing and
     fall back, rather than shipping drifting subtitles.
+
+    `style` picks the delivery instruction, not the voice: the narrator is
+    the channel's identity and stays pinned across both daily formats.
     """
     lines = [s.strip() for s in sentences if s and s.strip()]
     if not lines:
         return False, []
 
     voice = _next_voice()
-    pcm = _synthesize(_SEP.join(lines), voice)
+    pcm = _synthesize(_SEP.join(lines), voice, style=style)
     if not pcm:
         return False, []
     if not _pcm_to_mp3(pcm, output_path):
