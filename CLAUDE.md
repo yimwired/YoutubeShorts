@@ -6,9 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Automated YouTube Shorts pipeline — research + script + footage + voice + subtitle + thumbnail → scheduled upload.
 
-**ตั้งแต่ 2026-08-16: วันละ 1 คลิป ภาษาไทยอย่างเดียว publish 12:00 Bangkok.**
-`POST_HOURS = [12]`, `SLOT_STYLES = {12: "explainer"}` ใน `generate_batch.py`.
+**ตั้งแต่ 2026-09-08: วันละ 2 คลิป ภาษาไทยอย่างเดียว**
+`POST_HOURS = [8, 12]`, `SLOT_STYLES = {8: "human", 12: "explainer"}`
+ใน `generate_batch.py` — รันรอบเดียว 06:00 ได้ทั้งคู่.
 
+ก่อนหน้านั้น 08-16 → 09-07 คือ explainer คลิปเดียว 12:00.
 เหตุผลที่เปลี่ยนจาก 3 slot × EN+TH pair (analytics 60 วัน ก่อนเปลี่ยน):
 
 | | median views | median retention |
@@ -20,9 +22,41 @@ slot 08/12/19 median = 132 / 98 / 104 → เวลาลงไม่ใช่�
 และ 5 comments จาก 70k views ใน 60 วัน → คุณภาพต่อคลิปคือคอขวด ไม่ใช่จำนวน.
 งบ render ทั้งหมดเลยไปลงที่คลิปเดียวแทนหกคลิป.
 
-**Format = explainer** — เล่า "ที่มาของสิ่งที่กำลังฮิต / สิ่งที่คนคิดว่ารู้แล้ว"
+### Format 12:00 = `explainer`
+
+เล่า "ที่มาของสิ่งที่กำลังฮิต / สิ่งที่คนคิดว่ารู้แล้ว"
 **6 ประโยค ยาว 27-34 วิ** โครง HOOK → PROOF → ORIGIN → TURN → REVEAL → LOOP.
 แบรนด์บนจอ = `ที่มาของ · EP.n` ข้างโลโก้ (`series_state.json["explainer"]`).
+
+### Format 08:00 = `human` (ตั้งแต่ 2026-09-08)
+
+เล่า "ทำไมเราถึงทำสิ่งที่ทำอยู่ทุกวัน" — พฤติกรรมที่คนดูทำเอง + กลไกจริงจากงานวิจัย
+**6 ประโยค ยาว 27-34 วิ** โครง MIRROR → PROOF → MECHANISM → WHY → REVEAL → LOOP
+แบรนด์บนจอ = `ทำไมเราถึง · EP.n` (`series_state.json["human"]`).
+
+ต่างจาก explainer 3 อย่าง เท่านั้น — ที่เหลือใช้ของเดียวกันหมด
+(schema, word guard, subtitle style, TTS, editor):
+
+| | explainer | human |
+|---|---|---|
+| research | `get_brief()` เทรนด์ก่อน แล้ว evergreen | `research_human()` ไม่มีเทรนด์ |
+| ประโยคแรก | ข้อเท็จจริงที่ขัดกับที่คนคิดว่ารู้ | ภาพพฤติกรรมที่คนดูทำเอง |
+| ภาพ | stock + AI still 3 ช็อต | **stock คนจริงล้วน ไม่มี AI เลย** |
+
+**ห้ามเปิด AI b-roll ให้ `human`** — จุดขายของ format นี้คือฟุตเทจคนจริง
+ใบหน้าที่ generate ขึ้นมาคือสิ่งเดียวที่มันแสดงไม่ได้.
+`generate_human_script()` เคลียร์ `ai_prompt` ทุกประโยคด้วยโค้ด และ
+`generate_one()` ข้าม `replace_with_ai_clips` เมื่อ style เป็น human.
+
+keyword ของ human **ต้องมีคนอยู่ในเฟรมทุกอัน** (`visual_rules` ใน
+`SYSTEM_PROMPT_HUMAN`) — "sleep cycle" หรือ "phone screen closeup" ใช้ไม่ได้
+เพราะได้ภาพที่ไม่มีคน ซึ่งทำให้ format นี้เหมือน explainer ทันที
+
+**ที่ไม่ทำ และเหตุผล** — Film เสนอให้เอาคลิปคนจริงจากเน็ตมาพากย์ (แนวช่อง
+HMONG SPEED) reupload ของคนอื่นคือ Content ID claim + copyright strike
+สามครั้งใน 90 วัน = ช่องถูกลบ และ policy reused content ปิดประตู YPP ถาวร
+ช่องยังไม่ monetize (155 subs, `isChannelMonetizationEnabled: false`)
+ถ้าจะลอง format reupload จริงๆ ต้องเปิดช่องใหม่ ไม่ใช่บนช่องนี้
 
 ประวัติการย่อ 3 รอบ:
 
@@ -78,7 +112,8 @@ generate_batch.py  → queue/job_<ts>_<lang>.json + output/short_<ts>_<lang>.mp4
 `generate_batch.py:generate_one()` เรียงตามนี้:
 1. `src/trends.py:get_trend_candidates` — Google Trends RSS (TH+US) + YouTube most-popular chart TH, กรอง noise regex ออก
 2. `src/research.py:get_brief` — **Gemini + Google Search grounding** เลือกหัวข้อที่เล่า "ที่มา" ได้ แล้วขุด origin/spread/numbers/surprise. ไม่มีเทรนด์ผ่านเกณฑ์ → `research_evergreen()` จาก `EXPLAINER_CATEGORIES`. คืน `Brief` หรือ `None`
-3. `src/generator.py:generate_explainer_script` — gemini-2.5-flash เขียนสคริปต์ไทย **6 ประโยค** (schema บังคับ, word count นับด้วยโค้ด retry ได้ 3 ครั้ง) **ห้ามใส่ fact ที่ไม่มีใน brief**
+   · slot 08:00 ใช้ `research_human()` + `HUMAN_CATEGORIES` แทน — `Brief` ตัวเดียวกัน แต่ ORIGIN เก็บกลไก ไม่ใช่ปีก่อตั้ง
+3. `src/generator.py:generate_explainer_script` / `generate_human_script` — gemini-2.5-flash เขียนสคริปต์ไทย **6 ประโยค** (schema บังคับ, word count นับด้วยโค้ด retry ได้ 3 ครั้ง) **ห้ามใส่ fact ที่ไม่มีใน brief**. ทั้งคู่เรียก `_write_thai_script()` ตัวเดียวกัน ต่างที่ system prompt
 4. `src/footage.py:fetch_multiple_clips` — Pexels 1 clip ต่อประโยค
 5. `src/tts.py:generate_voiceover` — Gemini TTS → edge-tts Premwadee → gTTS (ดูหัวข้อ Voice)
 6. `main.py:_sync_th_subs` — silencedetect → TTS boundaries → Whisper → script split
@@ -129,8 +164,9 @@ $env:PYTHONIOENCODING="utf-8"
 # Render 1 คลิปเต็ม ไม่ queue ไม่ upload — ใช้ตรวจ prompt/voice/subtitle
 python test_explainer.py
 python test_explainer.py --no-trends   # ข้ามเทรนด์ ใช้ evergreen bucket
+python test_human.py                   # format เช้า (ไม่มี --no-trends, ไม่มีเทรนด์อยู่แล้ว)
 
-# Generate + upload จริง (default 1 คลิป)
+# Generate + upload จริง (default = 1 คลิปต่อ slot ใน POST_HOURS = 2)
 python generate_batch.py [N]
 
 # Generate ครบทุกขั้นแต่ไม่แตะ YouTube/Notion
@@ -170,7 +206,7 @@ $env:DRY_RUN="1"; python generate_batch.py 1
   คลิปที่ TTS ยาว 64 วิ ถูกตัดประโยคปิดทิ้ง และ 68 วิ render fail
   (cut point เกิน cap → `trim=duration` ติดลบ). `HARD_CAP = 100` เป็นกันบ้าเท่านั้น
   คุมความยาวที่สคริปต์ ไม่ใช่ที่ renderer. `SPEECH_TARGET = 36` แค่ log เตือน
-- ไทยอย่างเดียว 1 ไฟล์ต่อวัน
+- ไทยอย่างเดียว 2 ไฟล์ต่อวัน (08:00 human, 12:00 explainer)
 - Font ไทย = bundled `Kanit-Bold.ttf` (thumbnail ใช้ตัวนี้ด้วย — Impact ไม่มี glyph ไทย)
 - ห้าม hardcode API key
 

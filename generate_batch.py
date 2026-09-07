@@ -2,15 +2,20 @@
 Generate the day's Thai explainer short, queue it, and upload it with a
 scheduled publish time.
 
-Usage: python generate_batch.py [N]   (default N=1 video)
+Usage: python generate_batch.py [N]   (default: one per slot in POST_HOURS)
 
-One Thai video a day at noon, since 2026-08-16. The previous shape was
-three EN+TH pairs a day across 08:00/12:00/19:00. Sixty days of analytics
-killed it: Thai ran a median 196 views at 59.7% retention against
-English's 66 views at 33.4%, and the three slots were within noise of each
-other (132 / 98 / 104 median). Volume and slot timing were not the
-constraint -- per-video quality was. So the render budget now goes into
-one video instead of six.
+Two Thai videos a day since 2026-09-08: a behaviour clip at 08:00 and the
+explainer at 12:00. Before that it was the explainer alone, and before
+that, until 2026-08-16, three EN+TH pairs a day across 08:00/12:00/19:00.
+Sixty days of analytics killed the pairs: Thai ran a median 196 views at
+59.7% retention against English's 66 views at 33.4%, and the three slots
+were within noise of each other (132 / 98 / 104 median). Volume was not
+what the channel was short of -- per-video quality was.
+
+The second slot is back now for a different reason: the explainer's own
+numbers moved once it was rewritten (retention median 44 to 49.8%), and
+the morning format tests a separate question -- whether footage of real
+people holds a Thai feed better than stock b-roll of objects does.
 """
 import sys
 import os
@@ -27,9 +32,9 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from src.ai_broll import replace_with_ai_clips
-from src.generator import (generate_explainer_script, count_thai_words,
-                           _next_bucket)
-from src.research import get_brief
+from src.generator import (generate_explainer_script, generate_human_script,
+                           count_thai_words, _next_bucket)
+from src.research import get_brief, research_human
 from src.footage import fetch_multiple_clips
 from src.tts import generate_voiceover
 from src.thumbnail import create_thumbnail
@@ -43,8 +48,12 @@ from main import make_video
 OUTPUT_DIR = "output"
 QUEUE_DIR  = "queue"
 BKK        = ZoneInfo("Asia/Bangkok")
-POST_HOURS  = [12]
-SLOT_STYLES = {12: "explainer"}
+# Two formats a day, deliberately unlike each other. The noon explainer is
+# the one with five days of measured retention behind it; the 08:00 slot is
+# the same six-sentence shape pointed at the viewer's own behaviour, on
+# stock footage of real people rather than generated stills.
+POST_HOURS  = [8, 12]
+SLOT_STYLES = {8: "human", 12: "explainer"}
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(QUEUE_DIR, exist_ok=True)
@@ -52,11 +61,16 @@ os.makedirs(QUEUE_DIR, exist_ok=True)
 _SERIES_STATE_FILE = "series_state.json"
 _SERIES_STOPWORDS  = {"the", "of", "that", "and", "a", "to", "in", "we", "are", "is"}
 
-# The channel runs one format now, so it gets one series name and one running
-# episode number. The tag used to be derived per bucket, which on the current
-# buckets produced "TREND" and "EVERGREEN" -- printed on the thumbnail, where
-# it told a viewer nothing, and split the count across two arbitrary halves.
-SERIES_NAME = "ที่มาของ"
+# One series name and one running episode number per format. The tag used to
+# be derived per bucket, which produced "TREND" and "EVERGREEN" -- printed on
+# the thumbnail, where it told a viewer nothing, and split the count across
+# two arbitrary halves. The counters live under the style key in
+# series_state.json, so each format numbers its own episodes.
+SERIES_NAMES = {
+    "explainer": "ที่มาของ",
+    "human":     "ทำไมเราถึง",
+}
+SERIES_NAME = SERIES_NAMES["explainer"]   # legacy import in test_explainer.py
 SERIES_KEY  = "explainer"
 
 # Buckets for the days no live trend is worth explaining. Every entry is
@@ -76,6 +90,26 @@ EXPLAINER_CATEGORIES = [
     "ที่มาของเพลงหรือเสียงที่ทุกคนจำได้แต่ไม่รู้ว่ามาจากไหน",
     "เรื่องจริงเบื้องหลังสถานที่ที่คนไทยผ่านทุกวัน",
     "ที่มาของหน่วยวัดและตัวเลขที่ใช้กันจนชิน",
+]
+
+
+# Morning buckets. Every entry has to satisfy three things at once: the
+# viewer does it themselves, a real study explains why, and stock footage of
+# an ordinary person doing it exists. That last one is what rules out most
+# of psychology -- there is no footage of a cognitive bias.
+HUMAN_CATEGORIES = [
+    "นิสัยตอนใช้มือถือที่ทุกคนทำโดยไม่รู้ตัว",
+    "พฤติกรรมตอนกินข้าวที่คนไทยทำเหมือนกันหมด",
+    "สิ่งที่ร่างกายทำตอนนอนและตอนตื่น",
+    "ปฏิกิริยาเวลาเจอคนแปลกหน้าหรืออยู่ในที่สาธารณะ",
+    "เรื่องความจำกับสมาธิที่คนเข้าใจผิดมาตลอด",
+    "อาการทางร่างกายที่เกิดเองโดยห้ามไม่ได้",
+    "พฤติกรรมเวลาโกรธ เขิน หรือกลัว",
+    "นิสัยตอนทำงานหรือเรียนที่คนคิดว่าตัวเองคนเดียวที่เป็น",
+    "วิธีที่คนตัดสินใจซื้อของโดยไม่รู้ตัว",
+    "พฤติกรรมกับคนในครอบครัวและเพื่อนสนิท",
+    "สิ่งที่คนทำเวลาอยู่คนเดียวแล้วไม่เคยบอกใคร",
+    "นิสัยการเดินทางและการรอคอย",
 ]
 
 
@@ -222,7 +256,12 @@ def _description_with_tags(description: str, tags: list, n: int = 5) -> str:
 
 
 def generate_one(index: int, publish_at: str) -> None:
-    """Research, write, render, queue and upload one Thai explainer short."""
+    """Research, write, render, queue and upload one Thai short.
+
+    Which format depends on the slot: SLOT_STYLES maps the publish hour to
+    "human" or "explainer", and that choice picks the research call, the
+    scriptwriter and the series badge.
+    """
     timestamp = int(time.time()) + index * 10
     style     = SLOT_STYLES.get(datetime.fromisoformat(publish_at).hour,
                                 "explainer")
@@ -231,18 +270,26 @@ def generate_one(index: int, publish_at: str) -> None:
 
     history = load_history()
 
-    # Hybrid sourcing: a live trend when one is worth explaining, an
-    # evergreen bucket topic when none is. Either way the facts come back
-    # search-grounded -- the trend half is mostly post-cutoff material the
-    # scriptwriter would otherwise invent.
-    category = _next_bucket("explainer", EXPLAINER_CATEGORIES)
-    brief    = get_brief(EXPLAINER_CATEGORIES, category, avoid=history,
-                         use_trends=os.getenv("USE_TRENDING_TOPIC") != "0")
+    if style == "human":
+        # No trend half: a behaviour is evergreen by definition, and a live
+        # trend is what the noon explainer is for.
+        category = _next_bucket("human", HUMAN_CATEGORIES)
+        brief    = research_human(category, avoid=history)
+    else:
+        # Hybrid sourcing: a live trend when one is worth explaining, an
+        # evergreen bucket topic when none is. Either way the facts come back
+        # search-grounded -- the trend half is mostly post-cutoff material the
+        # scriptwriter would otherwise invent.
+        category = _next_bucket("explainer", EXPLAINER_CATEGORIES)
+        brief    = get_brief(EXPLAINER_CATEGORIES, category, avoid=history,
+                             use_trends=os.getenv("USE_TRENDING_TOPIC") != "0")
     if not brief:
         print("  ERROR: research produced no usable brief — skipping")
         return
 
-    data = generate_explainer_script(brief, used_titles=history)
+    data = (generate_human_script(brief, used_titles=history)
+            if style == "human"
+            else generate_explainer_script(brief, used_titles=history))
 
     title_th  = data["title_th"]
     script_th = data["script_th"]
@@ -251,8 +298,8 @@ def generate_one(index: int, publish_at: str) -> None:
     cta_th    = data.get("cta_th")  or ""
     thumb_txt = data.get("thumb_text_th") or hook_th
 
-    series_tag = SERIES_NAME
-    episode    = _bump_series(SERIES_KEY)
+    series_tag = SERIES_NAMES[style]
+    episode    = _bump_series(style)
     print(f"  Topic : {brief.topic}  ({brief.source})")
     print(f"  Title : {title_th}")
     print(f"  Hook  : {hook_th}   |  Series: {series_tag} #{episode}")
@@ -264,9 +311,12 @@ def generate_one(index: int, publish_at: str) -> None:
 
     # Generated stills for the two or three shots stock cannot serve --
     # the historical origin moment and the reveal. Failures keep the
-    # stock clip, so this can only improve the render.
-    clips = replace_with_ai_clips(clips, data.get("sentences", []),
-                                  OUTPUT_DIR, timestamp)
+    # stock clip, so this can only improve the render. The morning format
+    # skips it outright: its premise is footage of real people, and a
+    # generated face is the one thing it cannot show.
+    if style != "human":
+        clips = replace_with_ai_clips(clips, data.get("sentences", []),
+                                      OUTPUT_DIR, timestamp)
 
     audio_th     = os.path.join(OUTPUT_DIR, f"audio_{timestamp}_th.mp3")
     sentences_th = [s.get("text_th", "") for s in data.get("sentences", [])]
@@ -320,7 +370,7 @@ def generate_one(index: int, publish_at: str) -> None:
                           entity_overlays=overlays,
                           hook_text=hook_th, loop_text=loop_th,
                           cta_text=cta_th,
-                          series_label=SERIES_NAME, episode=episode,
+                          series_label=series_tag, episode=episode,
                           title_card=False, outro_card=False)
 
     # Lead the description with the comment-bait question: it is the first
@@ -427,7 +477,7 @@ def generate_one(index: int, publish_at: str) -> None:
 
 
 if __name__ == "__main__":
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else len(POST_HOURS)
     print(f"[Batch] Generating {n} video(s)...")
 
     used  = _used_publish_slots()
@@ -458,8 +508,13 @@ if __name__ == "__main__":
 
     print(f"\n[Batch] Done — {n_ok}/{len(slots)} video(s) queued")
 
-    # Exit non-zero when nothing succeeded so run_batch.ps1 does NOT write the
-    # daily-once marker -- a later trigger then retries today instead of
-    # skipping. A transient TTS or research outage self-heals on the next fire.
-    if slots and n_ok == 0:
+    # Exit non-zero when a planned slot went unfilled, so run_batch.ps1 does
+    # NOT write the daily-once marker and the workflow's retry fires -- a
+    # later attempt then covers today instead of skipping it. A transient TTS
+    # or research outage self-heals on the next run. Since the day has two
+    # slots, "some succeeded" has to count as failure too, or a morning where
+    # only one format rendered would look like a clean day and never retry.
+    # The retry cannot double-post: _used_publish_slots already holds the
+    # slots that were filled, so a second pass only sees the empty ones.
+    if n_ok < len(slots):
         sys.exit(1)

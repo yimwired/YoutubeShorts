@@ -1,9 +1,10 @@
 name: Daily Video Generation
 
-# Since 2026-08-16 this produces a single Thai explainer short per day at
-# 12:00 Bangkok, replacing three EN+TH pairs across 08:00/12:00/19:00.
-# See the module docstring in generate_batch.py for the analytics behind
-# the change.
+# Two Thai shorts a day since 2026-09-08: a behaviour clip at 08:00 and an
+# explainer at 12:00, both generated in this one 06:00 run. Between
+# 2026-08-16 and then it was the explainer alone, and before that three
+# EN+TH pairs across 08:00/12:00/19:00. See the module docstring in
+# generate_batch.py for the analytics behind each change.
 
 on:
   # Primary runner since 2026-06-10 (full-cloud migration). The TikTok
@@ -98,18 +99,21 @@ jobs:
           # pipeline on the real runner without spending a publish slot,
           # which is how a change gets checked before the cron meets it.
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || '0' }}
-        # One Thai video a day, published at 12:00 Bangkok. Generating at
-        # 06:00 leaves six hours of slack for a research or TTS retry
-        # before the scheduled publish time.
+        # No argument: one video per slot in POST_HOURS, which is both of
+        # today's. Generating at 06:00 leaves two hours of slack before the
+        # 08:00 publish and six before noon.
+        #
         # One retry. Research, TTS and the Pexels fetch all sit behind other
         # people's rate limits, and a day with no video is the expensive
-        # outcome -- generate_batch exits non-zero only when nothing was
-        # queued, so a retry cannot double-post.
+        # outcome -- generate_batch exits non-zero whenever a planned slot
+        # went unfilled, and the retry runs with ONLY_TODAY so it covers
+        # today's gap rather than queueing tomorrow early. The slot allocator
+        # skips slots that already have a job, so a retry cannot double-post.
         run: |
-          python generate_batch.py 1 || {
-            echo "[daily] first attempt failed — retrying once in 60s"
+          python generate_batch.py || {
+            echo "[daily] first attempt left a slot empty — retrying once in 60s"
             sleep 60
-            python generate_batch.py 1
+            ONLY_TODAY=1 python generate_batch.py
           }
 
       # Queue jobs + B thumbnails must land in the repo: the swap workflow

@@ -291,3 +291,57 @@ def get_brief(categories: list[str], category: str,
             return brief
         print("  [research] no trend qualified — falling back to evergreen")
     return research_evergreen(category, avoid=avoid)
+
+
+# The human-behaviour format reuses Brief rather than defining a second
+# shape for it: the six fields are generic enough once they are asked for
+# differently. ORIGIN carries the mechanism instead of a founding date,
+# SPREAD carries who does it and when instead of how something travelled.
+# _parse_brief's "no origin, no video" rule then still means the right
+# thing -- a behaviour clip with no mechanism is the generic listicle the
+# channel is trying not to make.
+_BRIEF_FORMAT_HUMAN = """ตอบเป็นข้อความธรรมดาตามรูปแบบนี้เป๊ะๆ (ห้ามใส่ markdown, ห้ามใส่ JSON):
+
+TOPIC: <พฤติกรรมนั้นเป็นภาษาไทยสั้นๆ ไม่เกิน 40 ตัวอักษร เช่น "เช็คมือถือทันทีที่ตื่น">
+ANGLE: <มุมเล่า 1 ประโยค — ต้องเป็น "ทำไมเราถึงทำ" ไม่ใช่ "มันคืออะไร">
+ORIGIN: <กลไกจริง สมองหรือร่างกายทำอะไรตอนนั้น อ้างงานวิจัยหรือชื่อปรากฏการณ์ที่มีจริง>
+SPREAD: <ใครเป็นบ้าง เกิดตอนไหน บ่อยแค่ไหน — ต้องมาจากผลสำรวจหรืองานวิจัยจริง>
+NUMBERS: <ตัวเลขจริง 2-3 ตัว เช่น เปอร์เซ็นต์คนที่เป็น จำนวนครั้งต่อวัน ปีที่วิจัย>
+SURPRISE: <สิ่งที่คนส่วนใหญ่เข้าใจผิดเกี่ยวกับพฤติกรรมนี้ — เก็บไว้เฉลยท้ายคลิป>
+CONFIDENCE: <high|medium|low — ต่ำถ้าไม่มีงานวิจัยรองรับหรือแหล่งขัดแย้งกัน>
+
+ทุกบรรทัดต้องมาจากผลค้นหาจริง ห้ามเดา ถ้าข้อไหนไม่มีข้อมูลจริงให้เขียนว่า unknown"""
+
+
+def research_human(category: str,
+                   avoid: list[str] | None = None) -> Brief | None:
+    """Research one everyday human behaviour to script depth.
+
+    The morning format: a thing the viewer already does, explained. It has
+    no trend half -- a behaviour is evergreen by definition, and a live
+    trend is what the noon explainer is for.
+    """
+    avoid_block = ""
+    if avoid:
+        avoid_block = ("\n\nเรื่องที่ทำไปแล้ว ห้ามซ้ำ:\n"
+                       + "\n".join(f"- {t}" for t in avoid[-40:]))
+
+    prompt = (
+        "คุณคือคนหาหัวข้อให้ช่องคลิปสั้นที่เล่า 'ทำไมเราถึงทำสิ่งที่ทำอยู่ทุกวัน'\n\n"
+        f"หมวดวันนี้: {category}\n"
+        "หาพฤติกรรม 1 อย่างในหมวดนี้ที่:\n"
+        "- คนดูทำเองแทบทุกวัน จนไม่เคยสงสัยว่าทำไม\n"
+        "- มีคำอธิบายจากงานวิจัยจริง ไม่ใช่ความเชื่อหรือจิตวิทยาป๊อป\n"
+        "- ถ่ายเป็นภาพคนธรรมดาทำได้ ไม่ต้องใช้แผนภาพหรือกราฟ"
+        + avoid_block + "\n\n" + _REJECT + "\n"
+        "- ห้ามเป็นอาการป่วยหรือโรค และห้ามให้คำแนะนำทางการแพทย์\n\n"
+        "ค้นหาข้อมูลจริงให้ครบก่อน แล้ว" + _BRIEF_FORMAT_HUMAN
+    )
+
+    text = _grounded(prompt, temperature=0.7)
+    if not text:
+        return None
+    brief = _parse_brief(text, source="human")
+    if brief:
+        print(f"  [research] human → {brief.topic} ({brief.confidence})")
+    return brief

@@ -57,14 +57,19 @@ _SHOT_FRAMING = {1: (0.50,), 2: (0.34, 0.66), 3: (0.30, 0.50, 0.70)}
 def _ass_header(style: str = "trending") -> str:
     # Fontname, Size, Primary(highlight), Secondary(dim), Outline, Back,
     # OutlineWidth, ShadowDepth
+    # Heavier than the legacy styles on purpose. A 3px outline disappears
+    # when white subtitles land on bright stock footage (snow, sky, sand),
+    # and on a phone that reads as a video with no subtitles at all.
+    daily = ("Kanit", 76, "&H0000E0FF", "&H00FFFFFF", "&H00000000", "&HA0000000", 6, 3)
     _styles = {
         "trending":  ("Kanit", 68, "&H0000E0FF", "&H00FFFFFF", "&H00000000", "&H90000000", 3, 1),
         "chaos":     ("Kanit", 78, "&H000060FF", "&H00FFFFFF", "&H00000000", "&H90000000", 3, 1),
         "narrative": ("Kanit", 58, "&H00E8E8E8", "&H00888888", "&H00000000", "&H80000000", 3, 1),
-        # Heavier than the rest on purpose. A 3px outline disappears when
-        # white subtitles land on bright stock footage (snow, sky, sand),
-        # and on a phone that reads as a video with no subtitles at all.
-        "explainer": ("Kanit", 76, "&H0000E0FF", "&H00FFFFFF", "&H00000000", "&HA0000000", 6, 3),
+        # Both daily formats read the same on purpose: one channel, one
+        # subtitle treatment. The morning format's footage of people in
+        # daylight is every bit as hard to put white text on.
+        "explainer": daily,
+        "human":     daily,
     }
     (font, size, pri, sec, outline, back,
      outline_w, shadow) = _styles.get(style, _styles["trending"])
@@ -103,7 +108,9 @@ def _make_thai_ass(words: list, ass_path: str, style: str = "trending"):
     # a thirteen-word sentence stacked five lines deep and covered the middle
     # of the frame, which is the footage the sentence is describing. Twenty
     # Thai glyphs of Kanit-Bold at 76px still clear the 1080 frame.
-    max_chars = 22 if is_narrative else 20 if style == "explainer" else 18
+    max_chars = (22 if is_narrative
+                 else 20 if style in ("explainer", "human")
+                 else 18)
 
     lines, current = [], []
     for i, w in enumerate(words):
@@ -421,7 +428,8 @@ def append_outro_card(video_path: str, lang: str = "en",
 
 
 _HOOK_COLORS = {"trending": "#FFE000", "chaos": "#FF2EA0",
-                "narrative": "#00E0FF", "explainer": "#FFE000"}
+                "narrative": "#00E0FF", "explainer": "#FFE000",
+                "human": "#FFE000"}
 
 # How long the hook stays up. The old 2.0s ended right as the viewer was
 # still deciding; the swipe-away call happens across the first ~3s, so the

@@ -402,6 +402,88 @@ EXPLAINER_RESPONSE_SCHEMA = {
 
 
 
+SYSTEM_PROMPT_HUMAN = """<role>
+คุณคือคนเขียนสคริปต์คลิปสั้นภาษาไทย ให้ช่องที่เล่า "ทำไมเราถึงทำสิ่งที่ทำอยู่ทุกวัน"
+คนดูคือคนไทยอายุ 15-35 ที่เลื่อนฟีดเร็วมาก คุณมีเวลา 2 วินาทีก่อนเขาปัดทิ้ง
+สิ่งที่ทำให้เขาหยุดคือความรู้สึกว่า "เฮ้ย นี่กูเลย" ไม่ใช่ความรู้ใหม่
+</role>
+
+<sourcing_rules>
+กฎเหล็ก ผิดข้อนี้คือใช้ไม่ได้ทั้งสคริปต์:
+- ข้อเท็จจริงทุกอย่างในสคริปต์ต้องมาจาก <research_brief> ที่ให้มาเท่านั้น
+- ห้ามเติมตัวเลข ชื่องานวิจัย ชื่อนักวิจัย ที่ไม่มีใน brief แม้จะมั่นใจว่าจริง
+- ห้ามพูดว่า "งานวิจัยบอกว่า" ถ้า brief ไม่ได้ระบุงานวิจัยนั้น
+- ห้ามให้คำแนะนำทางการแพทย์ ห้ามบอกว่าพฤติกรรมไหนเป็นอาการของโรค
+- คุณดัดแปลงได้แค่ "วิธีเล่า" ไม่ใช่ "เนื้อหา"
+</sourcing_rules>
+
+<retention_law>
+กฎข้อเดียวที่สำคัญที่สุด อ่านให้เข้าใจก่อนเขียน
+
+จากข้อมูลจริงของช่อง คนดูหายไปครึ่งหนึ่งภายในหนึ่งในสามแรกของคลิป
+ช่วงนั้นคือช่วงที่สคริปต์กำลังขยายความสิ่งที่เพิ่งพูดไป แทนที่จะเดินเรื่องต่อ
+การขยายความคือการขอให้คนรอ และคนเลื่อนฟีดไม่รอ
+
+เพราะฉะนั้น:
+- ห้ามมีประโยคที่หน้าที่เดียวคือทำให้คนอยากดูต่อ ทุกประโยคต้องให้ข้อมูลใหม่จริง
+- ห้ามเขียนทำนอง "แต่เรื่องจริงยิ่งกว่านั้น" "เดี๋ยวจะเล่าให้ฟัง"
+- ประโยคที่ 2 ต้องเป็นตัวเลขหรือข้อมูลจริง ไม่ใช่การตั้งท่า
+</retention_law>
+
+<structure>
+สคริปต์ยาว 28-34 วินาทีเมื่ออ่านออกเสียง หกประโยค เรียงแบบนี้:
+
+1. MIRROR     - ภาพพฤติกรรมที่คนดูทำเอง เจาะจงจนเขานึกออกว่าเมื่อวานก็ทำ
+                บอกไปเลยว่าเขาทำอะไร ห้ามถามว่า "เคยไหม" "เป็นไหม"
+2. PROOF      - ตัวเลขจาก brief ที่บอกว่าคนส่วนใหญ่ก็เป็น เขาไม่ได้แปลก
+3. MECHANISM  - ตอนนั้นสมองหรือร่างกายกำลังทำอะไรอยู่จริงๆ
+4. WHY        - ทำไมมนุษย์ถึงมีกลไกนี้ติดตัวมา
+5. REVEAL     - สิ่งที่คนส่วนใหญ่เข้าใจผิดเกี่ยวกับเรื่องนี้ อันที่ดีที่สุดใน brief
+6. LOOP       - ประโยคเดียว วนกลับไปที่ภาพในประโยคแรก
+
+ทุกประโยคเป็นภาพที่กล้องถ่ายคนจริงได้หนึ่งภาพ เปลี่ยนภาพทุกประโยค
+ประโยคที่ 3 กับ 4 ต้องเดินเรื่องไปข้างหน้า ห้ามเป็นการขยายความประโยคก่อนหน้า
+</structure>
+
+<length_budget>
+หกประโยค รวมกันทั้งสคริปต์ 58-72 คำไทย ห้ามเกิน 72
+ประโยคเดี่ยวยาว 6-13 คำ สลับสั้นยาว อย่าให้ยาวเท่ากันหมด
+อย่างน้อยสองประโยคต้องสั้นมาก (4-6 คำ) ใช้เป็นจังหวะเบรก
+
+ทำไมต้องคุมเป๊ะ: เสียงพากย์ใช้เวลาราว 0.47 วินาทีต่อคำไทย
+65 คำ = ราว 31 วินาที ซึ่งเป็นความยาวที่คนดูจบได้จริง
+จำนวนคำถูกนับด้วยโค้ดหลังคุณส่งงาน ถ้าไม่อยู่ในช่วง สคริปต์จะถูกสั่งเขียนใหม่
+ประโยคหนึ่งของคุณยาวราวสิบเอ็ดคำ หกประโยคจึงพอดีช่วงนี้ — เขียนให้กระชับ
+กว่านั้นได้ยิ่งดี แต่ห้ามลดจำนวนประโยค
+</length_budget>
+
+<tone>
+- พูดกับคนดูตรงๆ ใช้ "คุณ" หรือ "เรา" ได้ แต่อย่าใช้ทุกประโยคจนน่ารำคาญ
+- เขียนแบบเพื่อนสังเกตเห็นแล้วเล่าให้ฟัง ไม่ใช่หมอ ไม่ใช่ครู ไม่ใช่โค้ช
+- ห้ามสอน ห้ามแนะนำว่าควรทำหรือไม่ควรทำอะไร คลิปนี้อธิบาย ไม่ได้ให้คำปรึกษา
+- ห้ามใช้: ดังนั้น เนื่องจาก อย่างไรก็ตาม นอกจากนี้ กล่าวคือ ทั้งนี้
+- ใช้ได้ประปราย: เลย นะ น่ะ แหละ ก็
+- ห้ามลากตัวอักษร (ว้าาาว) ห้ามคำอุทานเกินจริง (โอ้โห บ้าเลย ตายแล้ว)
+- ตัวเลขเขียนเป็นคำที่อ่านออกเสียงถูก เช่น "แปดสิบเปอร์เซ็นต์" ไม่ใช่ "80%"
+</tone>
+
+<visual_rules>
+คลิปนี้ใช้ฟุตเทจคนจริงล้วน ไม่มีภาพ generate ไม่มีกราฟ ไม่มีแผนภาพ
+
+keyword ทุกอันต้องเป็นภาษาอังกฤษ และ**ต้องมีคนอยู่ในเฟรม**เสมอ
+เขียนแบบ: ใคร + กำลังทำอะไร + ที่ไหน
+ตัวอย่างดี: "woman checking phone in bed at night"
+             "man yawning at desk morning office"
+             "young woman looking at herself in mirror bathroom"
+ตัวอย่างแย่: "sleep cycle" (นามธรรม) "brain scan" (ไม่มีคน)
+             "phone screen closeup" (ไม่เห็นคน)
+
+fallback ก็ต้องมีคนเหมือนกัน เขียนสั้นๆ เช่น "person sleeping" "woman thinking"
+ai_prompt เว้นเป็นสตริงว่างทุกประโยค ห้ามใส่อะไรเลย
+thumbnail_keyword ต้องมีคนในเฟรมเช่นกัน thumbnail_prompt เว้นว่าง
+entities ต้องเป็น array ว่างเสมอ format นี้ไม่มีคนดังในเรื่อง
+</visual_rules>"""
+
 # The writer misses the length target in both directions -- the nine-sentence
 # format was specified at 38-45s and shipped clips of 29s and 49s, and the two
 # longest were the two that reached the fewest viewers. Prose cannot hold a
@@ -499,35 +581,15 @@ cta_th ต้องเลือกหนึ่งแบบจากสี่แ�
 </field_rules>"""
 
 
-def generate_explainer_script(brief, used_titles: list = None) -> dict:
-    """Turn a researched Brief into a Thai-only explainer script.
+def _write_thai_script(system_prompt: str, prompt: str) -> dict:
+    """Ask for a Thai script and return the parsed payload.
 
-    `brief` is a src.research.Brief. Everything factual in the output
-    traces back to it -- the model's job here is delivery, not recall.
+    Shared by both daily formats -- they differ in what they ask for, not
+    in how the asking is retried. See the comments inside for why the
+    model list and the word check are shaped the way they are.
     """
-    avoid_block = ""
-    if used_titles:
-        avoid_block = ("\n<already_published>\n"
-                       + "\n".join(f"- {t}" for t in used_titles[-40:])
-                       + "\n</already_published>\n")
-
-    prompt = (
-        "<research_brief>\n" + brief.as_prompt_block() + "\n</research_brief>\n"
-        + avoid_block +
-        "\nเขียนสคริปต์คลิปสั้น 28-34 วินาที หกประโยค จาก <research_brief> ข้างบน\n"
-        "ลำดับการทำงาน:\n"
-        "1. อ่าน brief ให้ครบ แล้วเรียงข้อเท็จจริงที่ใช้ได้ตามความน่าประหลาดใจ\n"
-        "2. อันที่น่าประหลาดใจที่สุดเก็บไว้ประโยคที่ 5 อันรองลงมาใช้เป็นประโยคที่ 2\n"
-        "   ประโยคที่ 2 ต้องให้ของจริงทันที ห้ามเป็นการเกริ่น (ดู retention_law)\n"
-        "3. เขียน hook จากประโยคที่ 5 ให้เป็นคำถามที่ประโยคนั้นตอบพอดี\n"
-        "4. เขียนประโยคที่เหลือให้เดินจากจุดเริ่มต้นไปหาจุดเฉลย ประโยคที่ 6 วนกลับ hook\n"
-        "5. นับคำไทยทั้งสคริปต์ ถ้าเกิน 72 คำ ตัดจนเหลือไม่เกิน 72\n"
-        "6. ตรวจทุกประโยคว่ามีข้อเท็จจริงที่ไม่ได้อยู่ใน brief หลุดเข้ามาไหม ถ้ามีให้ตัดออก\n\n"
-        + _EXPLAINER_SCHEMA
-    )
-
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_EXPLAINER},
+        {"role": "system", "content": system_prompt},
         {"role": "user",   "content": prompt},
     ]
 
@@ -589,7 +651,11 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
     if data is None:
         print("[generator] falling back to Groq for the script")
         data = _parse_json(_call_groq(messages, max_tokens=6000))
+    return data
 
+
+def _finalize_script(data: dict, brief) -> dict:
+    """Derive the downstream fields and clean the Thai in place."""
     sentences = data.get("sentences", [])
     data["script_th"] = " ".join(s.get("text_th", "") for s in sentences)
     data["script_en"] = ""      # TH-only format; kept for downstream compat
@@ -603,14 +669,6 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
             data[key] = _clean_thai(data[key])
     for s in sentences:
         s["text_th"] = _clean_thai(s.get("text_th", ""))
-
-    # The opening frame decides whether the video is watched at all, so it
-    # does not get to fall back to whatever Pexels returns for a generic
-    # keyword. If the writer left the hook without an image prompt, the
-    # thumbnail prompt stands in -- it already describes this topic as a
-    # single high-contrast subject, which is exactly the brief.
-    if sentences and not (sentences[0].get("ai_prompt") or "").strip():
-        sentences[0]["ai_prompt"] = (data.get("thumbnail_prompt") or "").strip()
 
     # "no living people" is in ai_prompt_rules and gets ignored: a Bet365
     # script asked flux-pro for "A determined woman, Denise Coates, looking
@@ -633,6 +691,89 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
     data["brief_source"] = brief.source
     data["research_raw"] = brief.raw
     return data
+
+
+def generate_explainer_script(brief, used_titles: list = None) -> dict:
+    """Turn a researched Brief into a Thai-only explainer script.
+
+    `brief` is a src.research.Brief. Everything factual in the output
+    traces back to it -- the model's job here is delivery, not recall.
+    """
+    avoid_block = ""
+    if used_titles:
+        avoid_block = ("\n<already_published>\n"
+                       + "\n".join(f"- {t}" for t in used_titles[-40:])
+                       + "\n</already_published>\n")
+
+    prompt = (
+        "<research_brief>\n" + brief.as_prompt_block() + "\n</research_brief>\n"
+        + avoid_block +
+        "\nเขียนสคริปต์คลิปสั้น 28-34 วินาที หกประโยค จาก <research_brief> ข้างบน\n"
+        "ลำดับการทำงาน:\n"
+        "1. อ่าน brief ให้ครบ แล้วเรียงข้อเท็จจริงที่ใช้ได้ตามความน่าประหลาดใจ\n"
+        "2. อันที่น่าประหลาดใจที่สุดเก็บไว้ประโยคที่ 5 อันรองลงมาใช้เป็นประโยคที่ 2\n"
+        "   ประโยคที่ 2 ต้องให้ของจริงทันที ห้ามเป็นการเกริ่น (ดู retention_law)\n"
+        "3. เขียน hook จากประโยคที่ 5 ให้เป็นคำถามที่ประโยคนั้นตอบพอดี\n"
+        "4. เขียนประโยคที่เหลือให้เดินจากจุดเริ่มต้นไปหาจุดเฉลย ประโยคที่ 6 วนกลับ hook\n"
+        "5. นับคำไทยทั้งสคริปต์ ถ้าเกิน 72 คำ ตัดจนเหลือไม่เกิน 72\n"
+        "6. ตรวจทุกประโยคว่ามีข้อเท็จจริงที่ไม่ได้อยู่ใน brief หลุดเข้ามาไหม ถ้ามีให้ตัดออก\n\n"
+        + _EXPLAINER_SCHEMA
+    )
+
+    data      = _write_thai_script(SYSTEM_PROMPT_EXPLAINER, prompt)
+    sentences = data.get("sentences", [])
+
+    # The opening frame decides whether the video is watched at all, so it
+    # does not get to fall back to whatever Pexels returns for a generic
+    # keyword. If the writer left the hook without an image prompt, the
+    # thumbnail prompt stands in -- it already describes this topic as a
+    # single high-contrast subject, which is exactly the brief.
+    if sentences and not (sentences[0].get("ai_prompt") or "").strip():
+        sentences[0]["ai_prompt"] = (data.get("thumbnail_prompt") or "").strip()
+
+    return _finalize_script(data, brief)
+
+
+def generate_human_script(brief, used_titles: list = None) -> dict:
+    """Turn a behaviour Brief into the morning format's Thai script.
+
+    Same six-sentence shape and the same word budget as the explainer --
+    both were measured, not guessed. What differs is the subject: the
+    viewer's own behaviour rather than the history of an object, which is
+    also why nothing here is generated imagery.
+    """
+    avoid_block = ""
+    if used_titles:
+        avoid_block = ("\n<already_published>\n"
+                       + "\n".join(f"- {t}" for t in used_titles[-40:])
+                       + "\n</already_published>\n")
+
+    prompt = (
+        "<research_brief>\n" + brief.as_prompt_block() + "\n</research_brief>\n"
+        + avoid_block +
+        "\nเขียนสคริปต์คลิปสั้น 28-34 วินาที หกประโยค จาก <research_brief> ข้างบน\n"
+        "ลำดับการทำงาน:\n"
+        "1. อ่าน brief ให้ครบ แล้วดูว่าอะไรคือสิ่งที่คนดูจะรู้สึกว่า 'เราก็เป็น'\n"
+        "2. เขียนประโยคที่ 1 ให้เป็นภาพของพฤติกรรมนั้นที่เจาะจงจนคนดูนึกออกทันที\n"
+        "   ห้ามถามว่า 'เคยไหม' ให้บอกไปเลยว่าเขาทำอะไร\n"
+        "3. ประโยคที่ 2 ใส่ตัวเลขจาก brief ที่บอกว่าไม่ได้มีเขาคนเดียวที่เป็น\n"
+        "4. ประโยคที่ 3-4 อธิบายกลไกจริง ประโยคที่ 5 คือสิ่งที่คนเข้าใจผิด\n"
+        "5. ประโยคที่ 6 วนกลับไปที่ภาพในประโยคแรก\n"
+        "6. ตรวจทุกประโยคว่ามีข้อเท็จจริงที่ไม่ได้อยู่ใน brief หลุดเข้ามาไหม ถ้ามีให้ตัดออก\n\n"
+        + _EXPLAINER_SCHEMA
+    )
+
+    data = _write_thai_script(SYSTEM_PROMPT_HUMAN, prompt)
+
+    # Every shot in this format is stock footage of a real person, which is
+    # the whole premise -- a generated still would put an AI face in the one
+    # place the format cannot afford one. The schema still requires the
+    # field, so it is emptied rather than removed.
+    for sentence in data.get("sentences", []):
+        sentence["ai_prompt"] = ""
+    data["thumbnail_prompt"] = ""
+
+    return _finalize_script(data, brief)
 
 
 def generate_fact_script(topic: str = None, used_titles: list = None,
