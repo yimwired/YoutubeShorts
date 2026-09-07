@@ -152,6 +152,73 @@ commit `7b9c95af` push แล้ว — 09-08 06:00 BKK จะได้สอง
    flash free tier 20 request/วัน/โปรเจกต์ ยังพอ แต่ถ้า word guard retry
    บ่อยจะหล่นไป lite เร็วขึ้นกว่าเดิม ดู `rate_usage.json`
 
+### รอบสาม — Film ดูคลิปแล้วติดสามจุด
+
+Film ดู render แรกของ human แล้วบอกว่า "ดีมากแต่คิดว่ามันอาจจะดีกว่านี้"
+ชี้สองข้อ: **ภาพกลางคลิป generic** กับ **เสียงพากย์/เพลง**
+
+#### ภาพกลางคลิป — เจอต้นเหตุจาก keyword
+
+```
+[1] woman checking phone repeatedly in pocket      การกระทำ
+[2] group of students looking at phones classroom  การกระทำ
+[3] person thinking concentration                  สภาวะจิตใจ
+[4] person sitting feeling clothes on skin         สภาวะจิตใจ
+[5] person looking relieved thoughtful             สภาวะจิตใจ
+[6] person anticipating phone call looking at phone การกระทำ
+```
+
+ประโยค 3-5 คือ MECHANISM / WHY / REVEAL ซึ่งเนื้อหาเป็นนามธรรม พอแปลงเป็น
+keyword เลยได้สภาวะจิตใจ และคลังฟุตเทจตอบคำพวกนี้ด้วยภาพเดียวกันทุกครั้ง
+คือคนนั่งนิ่งมองออกนอกเฟรม — กลางคลิปเลยเป็นคนแปลกหน้าสามคนไม่ทำอะไร
+ตรงช่วง ratio 15-35% ที่ retention หล่นอยู่แล้วพอดี
+
+แก้เป็นสามกฎ ทุกข้อมี code guard ไม่ใช่ prompt เปล่า:
+
+1. **ห้ามถ่ายอารมณ์** — `_ABSTRACT_FOOTAGE` เก็บรายชื่อคำ และ `_LOOKING_STATE`
+   จับรูปประโยค `looking <adj>` ที่คำพวกนี้มาในรูปนั้นจริงๆ
+   ("looking anxious" block · "looking at phone" ผ่าน)
+   ไล่ตั้งชื่ออารมณ์ทีละคำแพ้เสมอ — render ถัดมาโผล่ agitated กับ overwhelmed
+   ที่ไม่ได้อยู่ใน list รอบแรก
+2. **ต้องมีคนในเฟรม** — ยกเว้นได้ 1 ภาพกลางคลิป (ประโยคกลไกบางทีภาพของกลไกจริง
+   เล่าดีกว่า) แต่ห้ามเป็นภาพแรกหรือภาพสุดท้าย เพราะสองอันนั้นคือจุดที่ loop บรรจบ
+3. **คนเดียว ที่เดียว ทั้งคลิป** เปลี่ยนแค่การกระทำ — หกภาพจากหกที่กับหกคน
+   ทำให้เป็นสไลด์โชว์ ไม่ใช่เรื่องของใครคนหนึ่ง
+
+guard ใช้ retry budget เดียวกับ word count ผ่าน `extra_check` ของ
+`_write_thai_script()`
+
+**บั๊กที่เจอระหว่างทาง**: "ship the closest" จัดอันดับด้วย word distance
+อย่างเดียว → candidate ที่ guard เพิ่ง reject ชนะได้ถ้า word count ใกล้เป้ากว่า
+render รอบสองส่ง keyword `looking anxious` ออกไปทั้งที่ guard จับได้แล้ว
+แก้เป็น tuple `(failed_rule, word_distance)` — ผ่านกฎ format มาก่อนเสมอ
+
+**word floor 58 → 54** — รอบสองมี attempt ได้ 56 คำ (26 วิ) ซึ่งอยู่ในเป้า
+27-34 วิ แต่ถูก reject แล้วเสีย attempt ฟรี สำหรับ Shorts สั้นเกินปลอดภัยกว่ายาวเกิน
+
+#### เสียงพากย์ — แยก register ต่อ format
+
+`_STYLES` ใน `tts_gemini.py` — voice ยัง Charon ทั้งคู่ (identity ของช่อง)
+แต่คำสั่งการอ่านต่างกัน explainer = เพื่อนเล่าเรื่องให้ฟัง ·
+human = คนที่เพิ่งสังเกตเห็นแล้วหันมาบอกคนข้างๆ พูดใกล้ตัว ไม่ประกาศ
+`_SEP_RULE` (คำสั่ง `???`) ต่อท้ายทั้งสองแบบ ห้ามแก้ — subtitle timing พึ่งมัน
+
+#### เพลง — commit ขึ้น repo แล้ว
+
+Film ยืนยันว่าเพลง 8 ไฟล์ generate เอง → `git add -f music/cloud/`
+cloud runner เคยเล่น SoundHelix ทุกคลิปมาตลอด (public domain demo ที่มาสเตอร์
+ดังกว่าทุกไฟล์ในคลัง) ตอนนี้ได้เพลงจริงแล้ว `-stream_loop -1` รับมือเพลง 30 วิ
+กับคลิป 34 วิ ได้อยู่แล้ว
+
+#### ผลรอบสุดท้าย
+
+หัวข้อ "เป่าอาหารร้อนก่อนกิน" 55 คำ → 28.1 วิ keyword ผ่านทุกข้อ:
+blowing on steaming ramen / hand testing temperature / exhaling on a cold
+window pane / parent showing child / water evaporating (โควตาภาพไม่มีคน) /
+blowing on hot soup spoon (วนกลับภาพแรก)
+
+commit `a4fd5672` + `74c73743`
+
 ## 2026-09-02 — Session 1 (overnight)
 
 เริ่มจาก 3 อาการ: ช่องเงียบไป 3 วัน, บางคลิปตัดจบกลางคัน, ยอดวิวชนเพดาน.
