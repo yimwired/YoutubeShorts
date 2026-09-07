@@ -130,9 +130,9 @@ SYSTEM_PROMPT_EXPLAINER = """<role>
 <retention_law>
 กฎข้อเดียวที่สำคัญที่สุด อ่านให้เข้าใจก่อนเขียน
 
-จากข้อมูลจริงของช่อง คนดูครึ่งหนึ่งหายไประหว่างวินาทีที่ 6 ถึง 15
-ช่วงนั้นคือช่วงที่สคริปต์แบบเก่ากำลัง "เกริ่นว่าเดี๋ยวจะเฉลย" อยู่
-การเกริ่นคือการขอให้คนรอ และคนเลื่อนฟีดไม่รอ
+จากข้อมูลจริงของช่อง คนดูหายไปครึ่งหนึ่งภายในหนึ่งในสามแรกของคลิป
+ช่วงนั้นคือช่วงที่สคริปต์กำลังขยายความสิ่งที่เพิ่งพูดไป แทนที่จะเดินเรื่องต่อ
+การขยายความคือการขอให้คนรอ และคนเลื่อนฟีดไม่รอ
 
 เพราะฉะนั้น:
 - ห้ามมีประโยคที่หน้าที่เดียวคือทำให้คนอยากดูต่อ ทุกประโยคต้องให้ข้อมูลใหม่จริง
@@ -144,29 +144,31 @@ SYSTEM_PROMPT_EXPLAINER = """<role>
 </retention_law>
 
 <structure>
-สคริปต์ยาว 38-45 วินาทีเมื่ออ่านออกเสียง เก้าประโยค เรียงแบบนี้:
+สคริปต์ยาว 28-34 วินาทีเมื่ออ่านออกเสียง หกประโยค เรียงแบบนี้:
 
 1. HOOK        - ประโยคเดียวที่ขัดกับสิ่งที่คนคิดว่ารู้ ต้องมีชื่อ/ตัวเลข/ของจริงของเรื่องนี้อยู่ในประโยค
 2. PROOF       - ข้อเท็จจริงที่ทำให้ hook น่าเชื่อทันที ให้ตัวเลขหรือรายละเอียดที่จับต้องได้
-3. ORIGIN      - มันเริ่มจากใคร ปีไหน ที่ไหน
-4. ORIGIN      - ตอนเริ่มมันหน้าตาไม่เหมือนตอนนี้ยังไง
-5. TURN        - อะไรทำให้มันเปลี่ยน ใครดันมัน อุปสรรคคืออะไร
-6. TURN        - ผลของจุดเปลี่ยนนั้น ใส่ตัวเลขถ้ามีใน brief
-7. REVEAL      - จุดที่คนดูไม่รู้แน่ๆ อันที่ดีที่สุดใน brief เก็บไว้ตรงนี้
-8. REVEAL      - ผลพวงของจุดนั้น หรือสิ่งที่มันแปลว่าอะไรกับคนดูวันนี้
-9. LOOP        - ประโยคเดียว โยงกลับคำใน HOOK ให้คนรู้สึกว่าต้องย้อนดูต้นคลิป
+3. ORIGIN      - มันเริ่มจากใคร ปีไหน ที่ไหน และตอนนั้นหน้าตาไม่เหมือนตอนนี้ยังไง
+4. TURN        - อะไรทำให้มันเปลี่ยน ใครดันมัน ใส่ตัวเลขถ้ามีใน brief
+5. REVEAL      - จุดที่คนดูไม่รู้แน่ๆ อันที่ดีที่สุดใน brief เก็บไว้ตรงนี้
+6. LOOP        - ประโยคเดียว โยงกลับคำใน HOOK ให้คนรู้สึกว่าต้องย้อนดูต้นคลิป
 
 ทุกประโยคเป็นภาพที่กล้องถ่ายได้หนึ่งภาพ เปลี่ยนภาพทุกประโยค
+ประโยคที่ 3 กับ 4 ต้องเดินเรื่องไปข้างหน้า ห้ามเป็นการขยายความประโยคก่อนหน้า
 </structure>
 
 <length_budget>
-เก้าประโยค รวมกันทั้งสคริปต์ 78-95 คำไทย ห้ามเกิน 95
+หกประโยค รวมกันทั้งสคริปต์ 58-72 คำไทย ห้ามเกิน 72
 ประโยคเดี่ยวยาว 6-13 คำ สลับสั้นยาว อย่าให้ยาวเท่ากันหมด
 อย่างน้อยสองประโยคต้องสั้นมาก (4-6 คำ) ใช้เป็นจังหวะเบรก
 
 ทำไมต้องคุมเป๊ะ: เสียงพากย์ใช้เวลาราว 0.47 วินาทีต่อคำไทย
-90 คำ = ราว 42 วินาที ซึ่งคือช่วงที่ retention ดีที่สุด
-สคริปต์ 60 วินาทีของเดิมจบที่ retention 38-48% ต่ำกว่าเกณฑ์ที่ YouTube จะดันต่อ
+65 คำ = ราว 31 วินาที ซึ่งเป็นความยาวที่คนดูจบได้จริง
+สคริปต์เก้าประโยคของเดิมออกมา 36-49 วินาที และสองคลิปที่ยาวที่สุด
+คือสองคลิปที่เข้าฟีดน้อยที่สุด จำนวนคำถูกนับด้วยโค้ดหลังคุณส่งงาน
+ถ้าไม่อยู่ในช่วง สคริปต์จะถูกสั่งเขียนใหม่
+ประโยคหนึ่งของคุณยาวราวสิบเอ็ดคำ หกประโยคจึงพอดีช่วงนี้ — เขียนให้กระชับ
+กว่านั้นได้ยิ่งดี แต่ห้ามลดจำนวนประโยค
 </length_budget>
 
 <tone>
@@ -362,8 +364,8 @@ EXPLAINER_RESPONSE_SCHEMA = {
         "cta_th":        _str("คำถามชวนคอมเมนต์ 4-9 คำ เจาะจงกับเรื่องนี้"),
         "sentences": {
             "type": "array",
-            "minItems": 9,
-            "maxItems": 9,
+            "minItems": 6,
+            "maxItems": 6,
             "items": {
                 "type": "object",
                 "properties": {
@@ -399,6 +401,25 @@ EXPLAINER_RESPONSE_SCHEMA = {
 }
 
 
+
+# The writer misses the length target in both directions -- the nine-sentence
+# format was specified at 38-45s and shipped clips of 29s and 49s, and the two
+# longest were the two that reached the fewest viewers. Prose cannot hold a
+# number (the same lesson as the topic ban), so the count is checked here and
+# a miss buys another attempt with the real figure fed back.
+EXPLAINER_WORDS_MIN = 58
+EXPLAINER_WORDS_MAX = 72
+SEC_PER_THAI_WORD   = 0.47   # measured on Gemini TTS Thai, pauses included
+
+
+def count_thai_words(text: str) -> int:
+    """Thai words in `text`, tokenised the same way the subtitles are."""
+    try:
+        from pythainlp import word_tokenize
+    except ImportError:          # pythainlp is optional for the EN styles
+        return len(text.split())
+    return len([w for w in word_tokenize(text, engine="newmm") if w.strip()])
+
 _EXPLAINER_SCHEMA = """<output_schema>
 คืนค่าเป็น JSON object อย่างเดียว ห้ามมีข้อความอื่นนอก JSON
 
@@ -410,7 +431,7 @@ _EXPLAINER_SCHEMA = """<output_schema>
   "cta_th":         "คำถามชวนคอมเมนต์ 4-9 คำ ดู comment_bait_rules",
   "sentences": [
     {
-      "text_th":   "หนึ่งประโยคพูด 8-14 คำ",
+      "text_th":   "หนึ่งประโยคพูด 6-13 คำ",
       "keyword":   "english pexels video search term for this exact moment",
       "fallback":  "one or two word backup",
       "ai_prompt": "ใส่เฉพาะประโยคที่ stock footage ทำไม่ได้ (ดู ai_prompt_rules) นอกนั้นเว้นเป็นสตริงว่าง"
@@ -426,14 +447,14 @@ _EXPLAINER_SCHEMA = """<output_schema>
 </output_schema>
 
 <ai_prompt_rules>
-ใส่ ai_prompt ให้ 3-4 ประโยค ที่เหลือเว้นเป็น ""
+ใส่ ai_prompt ให้ 3 ประโยค ที่เหลือเว้นเป็น ""
 - ประโยคที่ 1 (HOOK) ต้องมี ai_prompt เสมอ ห้ามเว้นว่าง
   เฟรมแรกคือจุดที่คนตัดสินใจว่าจะดูต่อหรือปัดทิ้ง คลิป stock ทั่วไป
   ("คนนั่งหน้าคอม") ทำให้คลิปนี้หน้าตาเหมือนคลิปอื่นทุกคลิปในฟีด
   ภาพนี้ต้องเป็นภาพของเรื่องนี้เรื่องเดียว และเป็นภาพที่แปลกตาที่สุดในคลิป
   (ประโยคสุดท้ายวนกลับมาใช้ภาพนี้ซ้ำ เพื่อให้คลิปต่อกันเป็นวง)
 ที่เหลือเลือกประโยคที่ stock footage หาไม่ได้จริงๆ เรียงตามความสำคัญ:
-- ประโยค ORIGIN ทุกประโยคที่เป็นเหตุการณ์เฉพาะเจาะจงในอดีต (คนนี้ ปีนี้ ที่นี่)
+- ประโยค ORIGIN ที่เป็นเหตุการณ์เฉพาะเจาะจงในอดีต (คนนี้ ปีนี้ ที่นี่)
   stock ไม่มีทางมีภาพยุคนั้น มันจะให้ภาพปัจจุบันมาแทนแล้วผิดยุคทันที
 - ประโยค REVEAL ที่เป็นจุดเฉลย
 - ประโยคที่พูดถึงคน องค์กร หรือของเฉพาะเจาะจงที่หาคลิปจริงไม่ได้
@@ -464,11 +485,11 @@ cta_th ต้องเลือกหนึ่งแบบจากสี่แ�
 </comment_bait_rules>
 
 <field_rules>
-- sentences: ต้องมี 9 ประโยคพอดี เรียงตามโครง HOOK/PROOF/ORIGIN/TURN/REVEAL/LOOP
-    รวมกันทั้งสคริปต์ 78-95 คำไทย นับก่อนส่งออก ถ้าเกินให้ตัดคำจนพอ
+- sentences: ต้องมี 6 ประโยคพอดี เรียงตามโครง HOOK/PROOF/ORIGIN/TURN/REVEAL/LOOP
+    รวมกันทั้งสคริปต์ 58-72 คำไทย นับก่อนส่งออก ถ้าเกินให้ตัดคำจนพอ
     (วัดจากของจริง: เสียงพากย์ใช้ราว 0.47 วินาทีต่อคำไทยรวมจังหวะหยุด
-     90 คำคือราว 42 วินาที ซึ่งคือช่วงที่ retention ดีที่สุด)
-- ประโยคที่ 9 คือ LOOP ต้องมีคำที่ปรากฏใน hook_th ซ้ำ
+     65 คำคือราว 31 วินาที)
+- ประโยคที่ 6 คือ LOOP ต้องมีคำที่ปรากฏใน hook_th ซ้ำ
 - entities: 0-3 รายการ เฉพาะ "คนจริง" ที่มีหน้า Wikipedia (ผู้ก่อตั้ง นักประดิษฐ์ คนในเรื่อง)
     ห้ามใส่บริษัท แบรนด์ ผลิตภัณฑ์ สถานที่ — ภาพที่ Wikipedia คืนมาสำหรับพวกนี้
     เป็นโลโก้ ภาพหน้าจอ หรือแผนภาพ ซึ่งขึ้นจอแล้วอ่านไม่ออก ของพวกนี้ใช้ ai_prompt แทน
@@ -493,14 +514,14 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
     prompt = (
         "<research_brief>\n" + brief.as_prompt_block() + "\n</research_brief>\n"
         + avoid_block +
-        "\nเขียนสคริปต์คลิปสั้น 38-45 วินาที เก้าประโยค จาก <research_brief> ข้างบน\n"
+        "\nเขียนสคริปต์คลิปสั้น 28-34 วินาที หกประโยค จาก <research_brief> ข้างบน\n"
         "ลำดับการทำงาน:\n"
         "1. อ่าน brief ให้ครบ แล้วเรียงข้อเท็จจริงที่ใช้ได้ตามความน่าประหลาดใจ\n"
-        "2. อันที่น่าประหลาดใจที่สุดเก็บไว้ประโยคที่ 7 อันรองลงมาใช้เป็นประโยคที่ 2\n"
+        "2. อันที่น่าประหลาดใจที่สุดเก็บไว้ประโยคที่ 5 อันรองลงมาใช้เป็นประโยคที่ 2\n"
         "   ประโยคที่ 2 ต้องให้ของจริงทันที ห้ามเป็นการเกริ่น (ดู retention_law)\n"
-        "3. เขียน hook จากประโยคที่ 7 ให้เป็นคำถามที่ประโยคนั้นตอบพอดี\n"
-        "4. เขียนประโยคที่เหลือให้เดินจากจุดเริ่มต้นไปหาจุดเฉลย ประโยคที่ 9 วนกลับ hook\n"
-        "5. นับคำไทยทั้งสคริปต์ ถ้าเกิน 95 คำ ตัดจนเหลือไม่เกิน 95\n"
+        "3. เขียน hook จากประโยคที่ 5 ให้เป็นคำถามที่ประโยคนั้นตอบพอดี\n"
+        "4. เขียนประโยคที่เหลือให้เดินจากจุดเริ่มต้นไปหาจุดเฉลย ประโยคที่ 6 วนกลับ hook\n"
+        "5. นับคำไทยทั้งสคริปต์ ถ้าเกิน 72 คำ ตัดจนเหลือไม่เกิน 72\n"
         "6. ตรวจทุกประโยคว่ามีข้อเท็จจริงที่ไม่ได้อยู่ใน brief หลุดเข้ามาไหม ถ้ามีให้ตัดออก\n\n"
         + _EXPLAINER_SCHEMA
     )
@@ -510,7 +531,7 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
         {"role": "user",   "content": prompt},
     ]
 
-    # flash first: this call has to hold a 6-field brief, a 12-sentence
+    # flash first: this call has to hold a 6-field brief, a 6-sentence
     # structure and a no-invention rule at the same time, and lite drifts on
     # the sourcing rule first. But flash's free tier is 20 requests a day
     # for the whole project, so lite has to be able to take over -- a weaker
@@ -519,22 +540,55 @@ def generate_explainer_script(brief, used_titles: list = None) -> dict:
     # _call_gemini directly rather than _llm_call: the latter swallows a
     # Gemini failure and answers from Groq, which would make the lite
     # attempt unreachable. Groq stays as the final fallback below.
-    raw = None
+    #
+    # Each attempt is scored on its Thai word count. One inside the budget is
+    # taken immediately; otherwise the miss is quoted back and the next model
+    # tries again, and the closest of the attempts ships if none land. Every
+    # attempt already cost a call, so the worst case still returns a script.
+    data, closest = None, None
+    retry_note = ""
     if _GEMINI_AVAILABLE:
-        for model in ("gemini-2.5-flash", "gemini-2.5-flash-lite"):
+        for model in ("gemini-2.5-flash", "gemini-2.5-flash-lite",
+                      "gemini-2.5-flash-lite"):
             try:
-                raw = _call_gemini(messages, max_tokens=12000, model=model,
-                                   thinking_budget=2048,
-                                   response_schema=EXPLAINER_RESPONSE_SCHEMA)
-                break
+                raw = _call_gemini(
+                    [messages[0], {"role": "user",
+                                   "content": prompt + retry_note}],
+                    max_tokens=12000, model=model, thinking_budget=2048,
+                    response_schema=EXPLAINER_RESPONSE_SCHEMA)
+                candidate = _parse_json(raw)
             except Exception as e:
                 print(f"[generator] {model} failed: {type(e).__name__}: "
                       f"{str(e)[:140]}")
-    if raw is None:
-        print("[generator] falling back to Groq for the script")
-        raw = _call_groq(messages, max_tokens=6000)
+                continue
 
-    data = _parse_json(raw)
+            words = count_thai_words(" ".join(
+                s.get("text_th", "")
+                for s in candidate.get("sentences", [])))
+            print(f"[generator] {model}: {words} Thai words "
+                  f"(~{words * SEC_PER_THAI_WORD:.0f}s speech)")
+
+            if EXPLAINER_WORDS_MIN <= words <= EXPLAINER_WORDS_MAX:
+                data = candidate
+                break
+
+            target = (EXPLAINER_WORDS_MIN + EXPLAINER_WORDS_MAX) // 2
+            if closest is None or abs(words - target) < closest[0]:
+                closest = (abs(words - target), candidate)
+            direction = "ยาวเกินไป" if words > EXPLAINER_WORDS_MAX else "สั้นเกินไป"
+            retry_note = (
+                f"\n\nสคริปต์รอบที่แล้วนับได้ {words} คำไทย ซึ่ง{direction} "
+                f"เขียนใหม่ทั้งสคริปต์ให้รวมกันได้ {EXPLAINER_WORDS_MIN}-"
+                f"{EXPLAINER_WORDS_MAX} คำ ยังต้องเป็นหกประโยคเท่าเดิม "
+                f"ตัดคำในประโยคให้สั้นลงทุกประโยค ห้ามตัดประโยคทิ้ง")
+
+    if data is None and closest is not None:
+        data = closest[1]
+        print("[generator] no attempt hit the word budget — shipping the closest")
+
+    if data is None:
+        print("[generator] falling back to Groq for the script")
+        data = _parse_json(_call_groq(messages, max_tokens=6000))
 
     sentences = data.get("sentences", [])
     data["script_th"] = " ".join(s.get("text_th", "") for s in sentences)

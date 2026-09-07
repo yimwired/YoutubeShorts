@@ -27,7 +27,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from src.ai_broll import replace_with_ai_clips
-from src.generator import generate_explainer_script, _next_bucket
+from src.generator import (generate_explainer_script, count_thai_words,
+                           _next_bucket)
 from src.research import get_brief
 from src.footage import fetch_multiple_clips
 from src.tts import generate_voiceover
@@ -277,6 +278,14 @@ def generate_one(index: int, publish_at: str) -> None:
                              sentences_th=sentences_th or None,
                              style=style, tts_boundaries=th_boundaries)
 
+    # Length is the lever with the clearest effect on reach, and until now
+    # nothing recorded what a published clip was actually made of -- the word
+    # count behind a 49s video could only be recovered by re-watching it.
+    # Both numbers go into the job so the next comparison is a read.
+    word_count = count_thai_words(script_th)
+    speech_sec = round(th_words[-1]["end"], 1) if th_words else 0.0
+    print(f"  Length: {word_count} words -> {speech_sec}s speech")
+
     music = get_track(data.get("music_mood", "dramatic"))
 
     thumb_keyword = data.get("thumbnail_keyword")
@@ -340,6 +349,11 @@ def generate_one(index: int, publish_at: str) -> None:
         "tags":           hashtags,
         "topic":          brief.topic,
         "brief_source":   brief.source,
+        # What the clip was actually made of. Kept so a later look at which
+        # lengths travelled is a query over the queue, not a re-watch.
+        "script":         script_th,
+        "word_count":     word_count,
+        "speech_sec":     speech_sec,
         # The research the script was allowed to draw on, verbatim. The
         # no-invention rule is a prompt rule, and prompt rules do not hold on
         # gemini-2.5-flash-lite, which is what the daily job falls back to

@@ -18,7 +18,7 @@ WORD_GAP  = 0.07
 # the script, where it belongs. SPEECH_TARGET is the number the writer is
 # aiming at -- exceeding it is logged, never silently trimmed.
 HARD_CAP      = 100.0
-SPEECH_TARGET = 52.0
+SPEECH_TARGET = 36.0
 
 # Shortest segment ffmpeg will trim without complaint. Two cut points closer
 # together than this, or a cut point past the end of the audio, used to reach

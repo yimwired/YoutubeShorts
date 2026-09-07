@@ -21,19 +21,35 @@ slot 08/12/19 median = 132 / 98 / 104 → เวลาลงไม่ใช่�
 งบ render ทั้งหมดเลยไปลงที่คลิปเดียวแทนหกคลิป.
 
 **Format = explainer** — เล่า "ที่มาของสิ่งที่กำลังฮิต / สิ่งที่คนคิดว่ารู้แล้ว"
-**9 ประโยค ยาว 38-45 วิ** โครง HOOK → PROOF → ORIGIN → TURN → REVEAL → LOOP.
+**6 ประโยค ยาว 27-34 วิ** โครง HOOK → PROOF → ORIGIN → TURN → REVEAL → LOOP.
 แบรนด์บนจอ = `ที่มาของ · EP.n` ข้างโลโก้ (`series_state.json["explainer"]`).
 
-เดิมคือ 12 ประโยค 45-60 วิ โครง HOOK → STAKE → ORIGIN → SPREAD → REVEAL.
-retention curve ของ 90 วัน (ดู `src/analytics.py`) หลุด 40-50% ระหว่าง
-ratio 10-25% ของคลิป = วินาทีที่ 6-15 ซึ่งคือช่วง STAKE พอดี —
-STAKE คือประโยคที่ "บอกว่าเดี๋ยวจะเฉลย" ทั้งช่วง ไม่ให้ข้อมูลใหม่เลย
-คนเลื่อนฟีดไม่รอ เลยตัดทิ้ง ประโยคที่ 2 ต้องให้ fact จริงทันที.
+ประวัติการย่อ 3 รอบ:
 
-| | คลิป 58-63 วิ (ส.ค.) | เกณฑ์ที่ YouTube ดันต่อ |
-|---|---|---|
-| retention | 38-48% | 50% (คลิป 30-60 วิ) |
-| ภาพเปลี่ยนทุก | 4.6 วิ | 1.5-2.5 วิ |
+| | ประโยค | ยาว | ผลที่วัดได้ |
+|---|---|---|---|
+| ถึง 08-15 | 12 | 45-60 วิ | retention 38-48% |
+| 08-16 → 09-06 | 9 | 36-49 วิ | retention median 44 → 49.8%, views median 173 → 272 |
+| ตั้งแต่ 09-07 | 6 | 27-34 วิ | — |
+
+รอบ 12→9 ตัดช่วง STAKE ทิ้ง (ประโยคที่ "บอกว่าเดี๋ยวจะเฉลย" ไม่ให้ข้อมูลใหม่)
+ประโยคที่ 2 ต้องให้ fact จริงทันที. รอบ 9→6 ตัด ORIGIN/TURN/REVEAL ตัวที่สอง
+ของแต่ละช่วง ซึ่งเป็นการขยายความ ไม่ใช่การเดินเรื่อง — `audienceWatchRatio`
+ของ 6 คลิปที่ใช้โครง 9 ประโยคยังหล่นจาก 1.06 เหลือ 0.66 ระหว่าง ratio 15-35%
+ซึ่งตกอยู่ที่ประโยคพวกนั้นพอดี.
+
+**ความยาวคุมที่จำนวนประโยค ไม่ใช่จำนวนคำ** — โมเดลนับคำไทยไม่ได้ (ไทยไม่มี
+ช่องว่างคั่นคำ) สั่ง 58-72 คำสามรอบได้ 83 / 78 / 84 ทุกรอบ. จำนวนประโยค
+บังคับได้จริงเพราะ `EXPLAINER_RESPONSE_SCHEMA` ตั้ง `minItems`/`maxItems`
+และ decoder เป็นคนคุม. ประโยคหนึ่งของโมเดลยาวราว 11 คำ หกประโยค = ~66 คำ
+= ~31 วิ.
+
+`EXPLAINER_WORDS_MIN/MAX` ใน `generator.py` ยังนับคำไทยของทุก attempt
+(pythainlp newmm) — ไม่ใช่เพื่อบังคับ แต่เพื่อจับกรณีที่โมเดลเขียนประโยคยาว
+ผิดปกติ สคริปต์ที่นอกช่วงถูกส่งกลับไปเขียนใหม่พร้อมจำนวนคำจริง สูงสุด 3
+attempt แล้วเลือกอันที่ใกล้ 65 คำที่สุด. โครง 9 ประโยคคุมด้วย prompt
+อย่างเดียวและได้ 29-49 วิ จากสเปก 38-45 — สองคลิปที่ยาวสุดคือสองคลิปที่เข้า
+Shorts feed น้อยที่สุด (SHORTS=14 เทียบกับ 515).
 
 Styles เดิม (`trending` / `chaos` / `narrative`) ยังอยู่ใน `src/generator.py`
 เพราะ `test_trending.py` / `test_chaos.py` / `test_narrative.py` ยังเรียกใช้ —
@@ -62,7 +78,7 @@ generate_batch.py  → queue/job_<ts>_<lang>.json + output/short_<ts>_<lang>.mp4
 `generate_batch.py:generate_one()` เรียงตามนี้:
 1. `src/trends.py:get_trend_candidates` — Google Trends RSS (TH+US) + YouTube most-popular chart TH, กรอง noise regex ออก
 2. `src/research.py:get_brief` — **Gemini + Google Search grounding** เลือกหัวข้อที่เล่า "ที่มา" ได้ แล้วขุด origin/spread/numbers/surprise. ไม่มีเทรนด์ผ่านเกณฑ์ → `research_evergreen()` จาก `EXPLAINER_CATEGORIES`. คืน `Brief` หรือ `None`
-3. `src/generator.py:generate_explainer_script` — gemini-2.5-flash เขียนสคริปต์ไทย **9 ประโยค 78-95 คำ** **ห้ามใส่ fact ที่ไม่มีใน brief**
+3. `src/generator.py:generate_explainer_script` — gemini-2.5-flash เขียนสคริปต์ไทย **6 ประโยค** (schema บังคับ, word count นับด้วยโค้ด retry ได้ 3 ครั้ง) **ห้ามใส่ fact ที่ไม่มีใน brief**
 4. `src/footage.py:fetch_multiple_clips` — Pexels 1 clip ต่อประโยค
 5. `src/tts.py:generate_voiceover` — Gemini TTS → edge-tts Premwadee → gTTS (ดูหัวข้อ Voice)
 6. `main.py:_sync_th_subs` — silencedetect → TTS boundaries → Whisper → script split
@@ -143,7 +159,7 @@ $env:DRY_RUN="1"; python generate_batch.py 1
 
 ## Constraints
 
-- Vertical 9:16 (1080x1920), 38-45 วิ, H.264 + AAC
+- Vertical 9:16 (1080x1920), 27-34 วิ, H.264 + AAC
 - **ส่งที่ -14 LUFS** (`LOUDNORM` ใน editor.py) — YouTube เล่นทุกคลิปที่ -14
   ดังกว่านั้นมันหรี่ให้ เบากว่านั้นมันไม่ดันขึ้น. เดิม `amix` ไม่ได้ตั้ง `normalize=0`
   เลยหารเสียงด้วยจำนวน input → ทุกคลิปออกที่ -22 LUFS = เบากว่าคลิปอื่นในฟีด 8 dB
@@ -153,7 +169,7 @@ $env:DRY_RUN="1"; python generate_batch.py 1
 - **ห้ามใส่ cap ที่ตัดเสียงพากย์กลับมา** — `editor.py` เดิม cap 62 วิ ทำให้
   คลิปที่ TTS ยาว 64 วิ ถูกตัดประโยคปิดทิ้ง และ 68 วิ render fail
   (cut point เกิน cap → `trim=duration` ติดลบ). `HARD_CAP = 100` เป็นกันบ้าเท่านั้น
-  คุมความยาวที่สคริปต์ ไม่ใช่ที่ renderer. `SPEECH_TARGET = 52` แค่ log เตือน
+  คุมความยาวที่สคริปต์ ไม่ใช่ที่ renderer. `SPEECH_TARGET = 36` แค่ log เตือน
 - ไทยอย่างเดียว 1 ไฟล์ต่อวัน
 - Font ไทย = bundled `Kanit-Bold.ttf` (thumbnail ใช้ตัวนี้ด้วย — Impact ไม่มี glyph ไทย)
 - ห้าม hardcode API key
