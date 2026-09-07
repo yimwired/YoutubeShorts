@@ -97,6 +97,61 @@ commit `e912e5cc` push แล้ว — daily run 09-08 06:00 BKK จะใช�
 5. **local state files** — test render 2 รอบหมุน `bucket_state.json` กับ
    `rate_usage.json` ผม `git checkout` กลับแล้วเพื่อไม่ให้ชนกับ cloud
 
+### รอบสอง — format ที่สอง (2026-09-08 เช้ามืด)
+
+Film เสนอ format แนวช่อง HMONG SPEED: เอาคลิปคนจริงจากเน็ตมาพากย์ไทย
+ลงตอนเช้า ส่วน explainer ลงตอนเย็น
+
+**ค้านไปด้วย devil lens** — reupload ของคนอื่นคือ Content ID claim
+สาม strike ใน 90 วันช่องถูกลบ (594 คลิป 149,662 views หายพร้อมกัน)
+policy reused content ปิด YPP ถาวร ช่องยังไม่ monetize
+(155 subs, `isChannelMonetizationEnabled: false`) และตัวเลขของ HMONG SPEED เอง
+บอกว่า conversion 0.05% ต่ำกว่า FactSnap ที่ 0.12% — ได้วิว ไม่ได้คนติดตาม
+
+**สิ่งที่ Film เห็นถูกคือ "footage คนจริง bait ได้"** ซึ่งทดสอบได้ด้วย stock CC0
+ไม่ต้องแตะของใครเลย Film เลือกทางนี้
+
+#### format `human` — 08:00
+
+"ทำไมเราถึงทำสิ่งที่ทำอยู่ทุกวัน" MIRROR → PROOF → MECHANISM → WHY → REVEAL → LOOP
+badge `ทำไมเราถึง · EP.n`
+
+ใช้ของเดิมเกือบทั้งหมด — schema, word guard, `_write_thai_script()`,
+subtitle style, TTS, editor. ต่างแค่ 3 อย่าง:
+- `research_human()` ไม่มีเทรนด์ (พฤติกรรมเป็น evergreen อยู่แล้ว)
+  ใช้ `Brief` ตัวเดิม เปลี่ยนแค่ความหมายของช่อง: ORIGIN = กลไก, SPREAD = ใครเป็นบ้าง
+- ประโยคแรกชี้ตัวคนดู ไม่ใช่ข้อเท็จจริง
+- **ไม่มี AI image เลย** — `ai_prompt` ถูกเคลียร์ด้วยโค้ด และ `generate_one()`
+  ข้าม `replace_with_ai_clips` เมื่อ style เป็น human
+
+keyword ทุกอันบังคับต้องมีคนในเฟรม (`visual_rules`) — "sleep cycle" ใช้ไม่ได้
+เพราะได้ภาพไม่มีคน ซึ่งทำให้กลายเป็น explainer ทันที
+
+test render: หัวข้อ "มือถือสั่นทิพย์" 65 คำ → TTS 26.5 วิ → คลิป 27.0 วิ
+attempt เดียว keyword ได้คนครบทั้ง 6 ช็อต
+
+#### ที่แก้เพิ่มเพื่อรองรับ 2 slot
+
+- `_write_thai_script()` / `_finalize_script()` แยกออกมาจาก
+  `generate_explainer_script` — สอง format ใช้ร่วมกัน ไม่ copy-paste
+- `editor.py` รู้จัก style `human` (subtitle เหมือน explainer เป๊ะ
+  outline 6px — ฟุตเทจคนกลางแดดขาวพอๆ กับหิมะ)
+- **`generate_batch` exit non-zero เมื่อ slot ไหนไม่ได้ถูกเติม** ไม่ใช่เฉพาะตอน
+  ล้มหมด — วันที่ได้คลิปเดียวจากสองจะดูเหมือนวันปกติแล้วไม่ retry
+  workflow retry ส่ง `ONLY_TODAY=1` เพื่อเติมของวันนี้ ไม่ใช่คิวพรุ่งนี้ล่วงหน้า
+- `daily.yml` เรียก `python generate_batch.py` เปล่าๆ = 1 คลิปต่อ slot ใน POST_HOURS
+
+commit `7b9c95af` push แล้ว — 09-08 06:00 BKK จะได้สองคลิปแรก
+
+#### ค้างเพิ่มจากรอบนี้
+
+6. **ยังไม่รู้ว่า human format ดูดีไหม** — ผมดูคลิปไม่ได้ ส่งไฟล์ให้ Film แล้ว
+   ถ้าฟุตเทจ stock ดูปลอมหรือไม่เข้ากับเสียงพากย์ ต้องแก้ที่ `visual_rules`
+   ก่อนปล่อยยาว
+7. **quota** — วันละ 2 คลิป = research 2 + script 2 + TTS 2 ต่อวัน
+   flash free tier 20 request/วัน/โปรเจกต์ ยังพอ แต่ถ้า word guard retry
+   บ่อยจะหล่นไป lite เร็วขึ้นกว่าเดิม ดู `rate_usage.json`
+
 ## 2026-09-02 — Session 1 (overnight)
 
 เริ่มจาก 3 อาการ: ช่องเงียบไป 3 วัน, บางคลิปตัดจบกลางคัน, ยอดวิวชนเพดาน.
