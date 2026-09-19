@@ -16,6 +16,20 @@ The second slot is back now for a different reason: the explainer's own
 numbers moved once it was rewritten (retention median 44 to 49.8%), and
 the morning format tests a separate question -- whether footage of real
 people holds a Thai feed better than stock b-roll of objects does.
+
+It does. Over 2026-09-08..09-18, by brief source: human behaviour ran a
+median 196 views (n=12, mean 457, best 1290) at 51.9% retention, against
+trend-sourced explainer's median 12 (n=10, mean 17, best 52) at 41.9%.
+Same channel, same window, a 16x gap at the median -- which also rules out
+the channel-level ceiling the 09-02 report suspected, since a suppressed
+channel cannot run one format at 1290 views while another sits at 12.
+The one evergreen-sourced explainer in that window took 1029 views at
+71.8%, the best retention on the channel, but n=1 proves nothing on its
+own -- turning trends off is also how that sample grows. The two slots
+publish two hours apart, so some of the gap may be publish time rather
+than format; the size of it is not.
+
+Trends are off by default from 2026-09-20.
 """
 import sys
 import os
@@ -276,13 +290,14 @@ def generate_one(index: int, publish_at: str) -> None:
         category = _next_bucket("human", HUMAN_CATEGORIES)
         brief    = research_human(category, avoid=history)
     else:
-        # Hybrid sourcing: a live trend when one is worth explaining, an
-        # evergreen bucket topic when none is. Either way the facts come back
-        # search-grounded -- the trend half is mostly post-cutoff material the
-        # scriptwriter would otherwise invent.
+        # Evergreen bucket topics only. Live trends are off by default since
+        # 2026-09-20: over the twelve days both sourcings ran in this slot,
+        # the ten trend-sourced videos took a median 12 views at 41.9%
+        # retention, while the one evergreen-sourced video took 1029 at
+        # 71.8%. Set USE_TRENDING_TOPIC=1 to sample the trend half again.
         category = _next_bucket("explainer", EXPLAINER_CATEGORIES)
         brief    = get_brief(EXPLAINER_CATEGORIES, category, avoid=history,
-                             use_trends=os.getenv("USE_TRENDING_TOPIC") != "0")
+                             use_trends=os.getenv("USE_TRENDING_TOPIC") == "1")
     if not brief:
         print("  ERROR: research produced no usable brief — skipping")
         return

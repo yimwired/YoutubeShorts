@@ -132,8 +132,8 @@ generate_batch.py  → queue/job_<ts>_<lang>.json + output/short_<ts>_<lang>.mp4
 ## Pipeline (per video)
 
 `generate_batch.py:generate_one()` เรียงตามนี้:
-1. `src/trends.py:get_trend_candidates` — Google Trends RSS (TH+US) + YouTube most-popular chart TH, กรอง noise regex ออก
-2. `src/research.py:get_brief` — **Gemini + Google Search grounding** เลือกหัวข้อที่เล่า "ที่มา" ได้ แล้วขุด origin/spread/numbers/surprise. ไม่มีเทรนด์ผ่านเกณฑ์ → `research_evergreen()` จาก `EXPLAINER_CATEGORIES`. คืน `Brief` หรือ `None`
+1. `src/trends.py:get_trend_candidates` — Google Trends RSS (TH+US) + YouTube most-popular chart TH, กรอง noise regex ออก. **ปิด default ตั้งแต่ 2026-09-20** — ต้องตั้ง `USE_TRENDING_TOPIC=1` ถึงจะเรียก (ช่วง 09-08..09-18 slot เดียวกัน: trend-sourced 10 คลิป median 12 วิว / retention 41.9% · evergreen 1 คลิป 1029 วิว / 71.8% — n=1 ยังสรุปไม่ได้ ปิดเทรนด์คือวิธีเพิ่ม sample ด้วย)
+2. `src/research.py:get_brief` — **Gemini + Google Search grounding** เลือกหัวข้อที่เล่า "ที่มา" ได้ แล้วขุด origin/spread/numbers/surprise. default ตอนนี้ไปที่ `research_evergreen()` จาก `EXPLAINER_CATEGORIES` ตรงๆ (เทรนด์ปิดอยู่). คืน `Brief` หรือ `None`
    · slot 08:00 ใช้ `research_human()` + `HUMAN_CATEGORIES` แทน — `Brief` ตัวเดียวกัน แต่ ORIGIN เก็บกลไก ไม่ใช่ปีก่อตั้ง
 3. `src/generator.py:generate_explainer_script` / `generate_human_script` — gemini-2.5-flash เขียนสคริปต์ไทย **6 ประโยค** (schema บังคับ, word count นับด้วยโค้ด retry ได้ 3 ครั้ง) **ห้ามใส่ fact ที่ไม่มีใน brief**. ทั้งคู่เรียก `_write_thai_script()` ตัวเดียวกัน ต่างที่ system prompt
 4. `src/footage.py:fetch_multiple_clips` — Pexels 1 clip ต่อประโยค
