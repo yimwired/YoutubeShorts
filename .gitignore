@@ -3,6 +3,13 @@
 token_youtube.json
 token_tiktok.json
 client_secrets.json
+# The OAuth refresh flow writes a .bak beside the token before it rewrites it.
+# Those backups hold a full credential -- refresh_token and client_secret -- and
+# the bare filenames above do not cover them, so a `git add -A` at the root would
+# publish working channel credentials to what is a public repo.
+token_youtube.json.bak*
+token_tiktok.json.bak*
+*.bak
 
 # Video output (large files) -- but keep A/B candidate thumbnails:
 # swap_thumbnails.py runs on GitHub Actions days after generation and
