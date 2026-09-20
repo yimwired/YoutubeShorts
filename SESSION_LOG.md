@@ -5,6 +5,88 @@
 
 ---
 
+## 2026-09-20 — Session 3 (เลิกใช้เทรนด์: format ตัดสินวิว ไม่ใช่เพดานช่อง)
+
+Film ถามว่าจะทำ digital product / dropshipping ดีไหม เลยไปดูตัวเลขจริงของช่องก่อน
+แล้วคำตอบของช่องกลายเป็นงานของ session นี้เอง
+
+### คำถามที่ Session 1 ค้างไว้ ตอบได้แล้ว
+
+รายงาน 09-02 ตั้งไว้ว่า "ถ้า retention ขึ้นแต่วิวยังตัน = ปัญหาอยู่ระดับช่อง"
+ดึง YouTube Analytics API เทียบก่อน/หลังยกเครื่อง:
+
+| | 08-10..09-01 | 09-03..09-18 |
+|---|---|---|
+| retention (channel) | 51.6% | **59.3%** |
+| retention median/คลิป | 46.0% | **51.8%** |
+| วิว/วัน | 578 | 514 |
+| คลิปที่ดีที่สุด | 1,342 | 1,290 |
+| subs gained | 17 | 10 |
+| comments | 2 | 0 |
+
+retention ขึ้นจริง +7.7 points แต่วิวไม่ตาม เพดาน ~1,300 ไม่ขยับ — ตรงเงื่อนไข
+"ปัญหาระดับช่อง" ที่รายงานเขียนไว้เป๊ะ **แต่พอแยกตาม format กลับไม่ใช่**
+
+### format แยกด้วย `brief_source` ที่ job json เขียนไว้อยู่แล้ว
+
+คลิปที่ลงหลัง 09-08 (ตอนเปิด slot 08:00):
+
+| brief_source | n | median | mean | best | retention |
+|---|---|---|---|---|---|
+| `trend` (explainer จากเทรนด์สด) | 10 | **12** | 17 | 52 | 41.9% |
+| `human` (footage คนจริง) | 12 | **196** | 457 | 1,290 | 51.9% |
+| `evergreen` (explainer จาก bucket) | 1 | 1,029 | — | 1,029 | **71.8%** |
+
+**16 เท่าที่ median ช่องเดียวกัน ช่วงเดียวกัน** ซึ่งตัดสมมติฐานเพดานช่องทิ้งไปเลย:
+ช่องที่โดนกดทั้งช่องรัน format นึงที่ 1,290 พร้อมอีก format ที่ 12 ไม่ได้
+เพดานเป็นของ format explainer-จากเทรนด์ ไม่ใช่ของช่อง
+
+**confound ที่ยังแก้ไม่ได้**: สอง slot ลงห่างกัน 2 ชั่วโมง (08:00 กับ 12:00)
+ส่วนหนึ่งของช่องว่างอาจมาจากเวลาลง แต่ 16 เท่าใหญ่เกินกว่าจะมาจากเวลาล้วน
+
+### ที่แก้
+
+`generate_batch.py` — `use_trends` เปลี่ยนจาก opt-out เป็น opt-in
+(`os.getenv("USE_TRENDING_TOPIC") == "1"`) slot 12:00 ยังเป็น explainer เหมือนเดิม
+แต่ไปที่ `research_evergreen()` ตรงๆ ทุกวัน · slot 08:00 ไม่แตะ
+
+ไม่ลบ `src/trends.py` กับ `pick_trend_topic` — ย้อนด้วยตัวแปรเดียว และการปิดเทรนด์
+คือวิธีเพิ่ม sample ของ evergreen ด้วย (ตอนนี้ n=1 สรุปอะไรไม่ได้)
+
+test 4 เคสผ่าน: env unset / `=0` / `=1` route ถูก + slot 08:00 ยังเข้า `research_human`
+ไม่ได้รัน `test_explainer.py` เต็ม เพราะยิง Gemini + Pexels จริงโดยไม่ตอบอะไรเพิ่ม
+
+### security: `.bak` ของ OAuth token ไม่อยู่ใน .gitignore
+
+`token_youtube.json` ถูก ignore แต่ `token_youtube.json.bak` ไม่ — และ refresh flow
+เขียน `.bak` ไว้ข้างๆ ทุกครั้ง ไฟล์นั้นมี `refresh_token` + `client_secret` ครบ
+repo นี้ public → `git add -A` ที่ root ครั้งเดียว = ปล่อย credential ที่ใช้งานได้จริง
+
+ตรวจ `git log --all` ทุก ref แล้ว **ไม่เคยถูก commit** — ปิดช่องทัน ไม่ใช่ตามเก็บ
+`daily.yml` ไม่เคยเสี่ยงเพราะ stage ด้วย path (`queue/ output/`) ไม่ใช่ `-A`
+
+เพิ่ม `token_youtube.json.bak*` / `token_tiktok.json.bak*` / `*.bak` ใน `.gitignore`
+ย้ายไฟล์จริง 2 ตัวไป `G:\YoutubeShorts-archive\credentials\` (ย้าย ไม่ลบ เผื่อต้อง roll back)
+
+### เก็บกวาด repo root (ค้างจาก Session 2 ข้อ 6)
+
+ย้ายไป `G:\YoutubeShorts-archive\scratch-2026-05\`: `retry_pair3.*`, `tmp_develian/`,
+PNG ของ Gemini 4 ไฟล์, `processed_image (6) (1).png`, `0_generate.txt`
+ไม่แตะ `.agents/`, `AGENTS.md`, `compile_longform.py`, `generate/` — ของที่ Film ทำค้างไว้
+
+### ค้างไว้
+
+1. **รอผลคลิป evergreen ล้วน** — cron 06:00 ของ 09-21 เป็นคลิปแรกที่ไม่มีเทรนด์
+   Analytics ต้องรอ 48 ชม. ดูได้ราว 09-23 ว่า median ขยับจาก 12 ไปที่ไหน
+2. **evergreen ยัง n=1** — อย่าเพิ่งสรุปว่า 1,029 กับ 71.8% คือค่าปกติของมัน
+3. **rebrand ชื่อ+ปกช่อง** Film อยากทำ — รอ format นิ่งก่อนถึงจะรู้ว่าช่องควรชื่ออะไร
+   (ปกมีผลแค่ 2.4% ของ traffic อยู่แล้ว feed ไม่โชว์ปก)
+4. ข้อ 5 กับ 7 ของ Session 2 ยังค้างเหมือนเดิม — `scheduler.py` dead code,
+   เพลงใน `music/cloud/` รอ Film ตัดสินว่า publish ได้ไหม
+5. `src/captions.py` ยัง uncommitted (Whisper CUDA) — ไม่ได้แตะ
+
+---
+
 ## 2026-09-07 — Session 2
 
 เปิดมาด้วยคำถามเดียว: format 9 ประโยคที่เปลี่ยนไปเมื่อ 09-02 ได้ผลไหม.
