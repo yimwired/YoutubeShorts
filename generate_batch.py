@@ -51,6 +51,7 @@ from src.generator import (generate_explainer_script, generate_human_script,
 from src.research import get_brief, research_human
 from src.footage import fetch_multiple_clips
 from src.tts import generate_voiceover
+from src.editor import _clip_duration
 from src.thumbnail import create_thumbnail
 from src.music import get_track
 from src.notion_logger import log_scheduled, mark_uploaded
@@ -198,6 +199,35 @@ def _future_slots(used: set[str], n: int) -> list[str]:
                     break
         day += 1
     return slots
+
+
+def _sentence_timeline(sentences: list[str],
+                       boundaries: list[dict]) -> list[dict] | None:
+    """Pair each script sentence with where it plays in the voiceover.
+
+    None unless the TTS timed every sentence: a timeline that is short or
+    misaligned would pin a retention drop on the wrong sentence, which is
+    worse than recording nothing.
+    """
+    if not sentences or len(boundaries or []) != len(sentences):
+        return None
+    try:
+        return [{"text":  text,
+                 "start": round(float(b["start"]), 2),
+                 "end":   round(float(b["end"]), 2)}
+                for text, b in zip(sentences, boundaries)]
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _video_seconds(path: str) -> float | None:
+    """Rendered length: the denominator that turns sentence times into the
+    elapsed-time ratios the retention curve is keyed on. A failed probe
+    costs the per-sentence report, never the job."""
+    try:
+        return round(_clip_duration(path), 2)
+    except (OSError, TypeError, ValueError):
+        return None
 
 
 def _build_entity_overlays(data: dict, timestamp: int,
@@ -419,6 +449,13 @@ def generate_one(index: int, publish_at: str) -> None:
         "script":         script_th,
         "word_count":     word_count,
         "speech_sec":     speech_sec,
+        # Where each sentence plays. The voiceover starts at 0s, so TTS time
+        # is video time; tools/retention_by_line.py lays the retention curve
+        # over this to name the sentence viewers left on. `style` picks the
+        # slot names, since the human format has six beats of its own.
+        "style":          style,
+        "sentences":      _sentence_timeline(sentences_th, th_boundaries),
+        "video_sec":      _video_seconds(final_th),
         # The research the script was allowed to draw on, verbatim. The
         # no-invention rule is a prompt rule, and prompt rules do not hold on
         # gemini-2.5-flash-lite, which is what the daily job falls back to
