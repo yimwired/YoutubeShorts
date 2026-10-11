@@ -5,6 +5,51 @@
 
 ---
 
+## 2026-10-11 — Session 6 (retention รายประโยค: เครื่องมือพร้อม รอข้อมูล)
+
+ทำข้อ "ทาบ `audienceWatchRatio` กับ 6 ประโยค" ที่จดไว้ใน Session 5
+
+- **API คืนกราฟของ Shorts ได้** 100 จุด (ทุก 1% ของความยาว) แม้คลิปที่มี 69 วิว. ข้อสงสัยใน Session 5 ตกไป
+- **กับดัก**: query ที่เริ่มวันเดียวกับ `publish_at` (เวลาไทย) ได้ 0 แถว เพราะวันของ Analytics เป็นเวลาแปซิฟิก
+  คลิปที่ปล่อย 08:00 ที่นี่ยังเป็นวันก่อนหน้าฝั่งนั้น ต้องเริ่ม query ก่อนหนึ่งวัน. ดึงกราฟ retention ที่อื่นต้องระวังแบบเดียวกัน
+- **ทาบคลิปเก่าไม่ได้**: job json เก็บบทเป็นข้อความก้อนเดียว (`script` = 6 ประโยคต่อด้วยช่องว่าง) ไม่มีเวลาของแต่ละประโยค
+  ทั้งที่ `tts.py` คำนวณ boundary รายประโยคไว้ทุกคลิปแล้วทิ้งไป
+- `generate_batch.py`: job ใหม่บันทึก `style`, `sentences` (`[{text, start, end}]` จาก TTS boundary) และ `video_sec` (ffprobe ไฟล์ที่ render)
+  - `_sentence_timeline()` คืน None ถ้าจำนวน boundary ไม่เท่าจำนวนประโยค เพราะ timeline ที่เพี้ยนจะโยนการหลุดไปให้ประโยคผิดตัว
+  - `_video_seconds()` probe พัง = None ไม่ทำให้ job ล้ม
+- `tools/retention_by_line.py` ใหม่: อ่าน job ที่มี `sentences` และปล่อยเกิน 48 ชม. ดึงกราฟ ORGANIC แล้วรายงานต่อคลิปว่าแต่ละประโยค
+  เสียคนดูกี่ pts (และต่อวินาที) + ค่ากลางต่อช่อง แยก format (`human` = MIRROR/PROOF/MECHANISM/WHY/REVEAL/LOOP,
+  ที่เหลือ = HOOK/PROOF/ORIGIN/TURN/REVEAL/LOOP)
+- verify: compile ผ่าน · helper สองตัวผ่าน 6 เคส · ยิง API จริงกับ `d7bPUM-a0Cc` ได้ครบ 100 จุด รายงานออกครบทั้งต่อคลิปและสรุป
+  (เวลาประโยคในเทสต์ประมาณจากจำนวนตัวอักษร **ห้ามอ่านตัวเลขชุดนั้นเป็นผล**)
+
+### ค้าง
+
+- **ยังไม่ push**: มีผลกับ job รายวันบน GH Actions. local ตามหลัง origin 63 commit (queue ที่ Action commit, ไม่มีตัวไหนแตะไฟล์ที่แก้)
+  และมี `src/captions.py` แก้ค้างจากก่อนหน้าที่ไม่ควรติดไปด้วย. commit แค่ `generate_batch.py` + `tools/retention_by_line.py` + log นี้
+- หลัง push: รอคลิปที่มี `sentences` สัก 10 คลิป (~5 วัน + 48 ชม.) แล้วรัน `python tools/retention_by_line.py` (Windows ตั้ง `PYTHONIOENCODING=utf-8`)
+
+## 2026-10-10 — Session 5 (โน้ตจากงานอื่น ไม่ได้แก้โค้ดใน repo นี้)
+
+ทำ skill `video-study` (ถอดเสียง + เฟรมรวม + `corpus.csv` เทียบหลายคลิป) แล้วเทสต์กับ 3 คลิปล่าสุดของช่อง.
+Film สั่ง "จดไว้ ไว้มาทำต่อ" ของที่เจอ:
+
+- **EP.49 ผัดไทย** (`QQDDNXE3HtE`) footage ไม่ตรงเรื่อง: วิ 10-12 ซับพูดถึงจอมพล ป. แต่ภาพเป็นปกหนังสือ
+  นักเขียนตุรกี Ahmet Hamdi Tanpınar, วิ 20-24 เป็นคนกินข้าวบนฟอยล์ที่ไม่ใช่ไทย. น่าจะมาจาก Pexels ค้นด้วย keyword.
+  เห็นคลิปเดียว ยังไม่รู้ว่าเป็นทั้ง pipeline ไหม
+- `src/generator.py:41` ยังเขียน `in the style of @develian_g` ทั้งที่ช่อง rebrand เป็น ไม่เคยสงสัย แล้ว.
+  ไอเดีย: ย้าย voice ของช่องออกจาก prompt ไปเป็นไฟล์
+- ไอเดีย: รัน `video-study` โหมด corpus กับช่องไทยแนว "ทำไม/ที่มาของ" 30-50 คลิป แล้วเทียบ hook กับ format ที่ได้ผล
+  (แก้ปัญหา n น้อยของ Session 3 โดยไม่ต้องรอ Analytics ของช่องตัวเอง)
+- ช่อง folktale เปลี่ยนชื่อจาก เล่าจนจบ เป็น **สมุดข่อย** `@samutkhoi` แล้ว. preset `laochonchop` ใน
+  `tools/make_channel_art.py` เป็นภาพเก่า ไม่ได้ใช้แล้ว (ภาพใหม่ทำที่ `Content-studio/folktale/scripts/make_channel_art.py`)
+- ไอเดียจากคลิป "Content Creator IQ" (โน้ตเต็ม `~/.claude/skills/social-growth/references/pattern-mining.md`):
+  `src/analytics.py` ดึงแค่ `averageViewPercentage` ไม่ได้ดึงกราฟ retention. ดึง `audienceWatchRatio` ตาม
+  `elapsedVideoTimeRatio` แล้วทาบกับ 6 ช่อง HOOK..LOOP ทุกคลิป จะรู้ว่าประโยคช่องไหนคนหลุด.
+  ยังไม่ได้เช็คว่า API คืนกราฟของ Shorts หรือไม่
+
+---
+
 ## 2026-09-20 — Session 3 (เลิกใช้เทรนด์: format ตัดสินวิว ไม่ใช่เพดานช่อง)
 
 Film ถามว่าจะทำ digital product / dropshipping ดีไหม เลยไปดูตัวเลขจริงของช่องก่อน
