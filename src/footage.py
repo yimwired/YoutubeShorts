@@ -1,5 +1,6 @@
 import requests
 import os
+import re
 from src.rate_tracker import record
 
 PEXELS_KEY  = os.getenv("PEXELS_API_KEY")
@@ -27,13 +28,40 @@ def _best_portrait_file(video: dict) -> str | None:
     return best
 
 
-# How far down the relevance ranking we are willing to look before
-# preferring a fresher clip. Wide enough that the newest of the genuinely
-# relevant results wins; narrow enough that relevance still decides.
-_RELEVANCE_WINDOW = 4
+# How far down Pexels' relevance ranking a clip may come from. Wide enough that
+# a clip whose title matches more of the query can beat a vaguer one ranked
+# above it; narrow enough that Pexels' own order still decides among equals.
+_RELEVANCE_WINDOW = 8
+
+# Words that say nothing about whether a clip fits: nearly every stock clip has
+# a person in it, and "close up shot" describes framing, not the subject.
+_UNINFORMATIVE = {
+    "the", "and", "with", "for", "from", "into", "onto", "over", "under",
+    "their", "this", "that", "while", "very", "close", "shot", "view",
+    "video", "footage", "scene", "person", "people", "man", "men", "woman",
+    "women",
+}
+
+# Words that set the era or place rather than name the subject. They break ties
+# between clips that already show the subject and never qualify a clip alone:
+# "surprised thai person greeting" otherwise promoted a Bangkok parade from
+# sixth place over five clips of people reacting, on the word "thai".
+_SETTING_WORDS = {
+    "thai", "thailand", "old", "vintage", "retro", "modern", "ancient",
+    "historic", "historical", "traditional", "classic", "world", "global",
+    "globally", "different", "various",
+}
+
+_SUFFIXES = ("ing", "ed", "s")
+
+# One search per query and size per run: the fallback tiers in
+# fetch_multiple_clips ask again for queries already searched.
+_search_cache: dict[tuple[str, str | None], list[dict]] = {}
 
 
 def _search_pexels(keyword: str, size: str | None) -> list[dict]:
+    if (keyword, size) in _search_cache:
+        return _search_cache[(keyword, size)]
     headers = {"Authorization": PEXELS_KEY}
     params  = {"query": keyword, "per_page": 20, "orientation": "portrait"}
     if size:
@@ -46,27 +74,79 @@ def _search_pexels(keyword: str, size: str | None) -> list[dict]:
     record("pexels")
     if resp.status_code != 200:
         return []
-    return resp.json().get("videos", [])
+    videos = resp.json().get("videos", [])
+    _search_cache[(keyword, size)] = videos
+    return videos
 
 
-def _pexels(keyword: str, output_path: str,
-            used_ids: set | None = None) -> str | None:
-    """Download a relevant, reasonably recent portrait clip for `keyword`.
+def _stem(word: str) -> str:
+    """Rough English stem, so "boring" meets "bored" and "notes" meets "note".
 
-    Two signals, in this order:
+    One ending comes off ("glass" keeps its "ss"), then a trailing "e", which
+    is what lets "making", "make" and "makes" land on the same stem.
+    """
+    for suffix in _SUFFIXES:
+        if word.endswith(suffix) and not word.endswith("ss") and len(word) - len(suffix) >= 3:
+            word = word[: -len(suffix)]
+            break
+    if word.endswith("e") and len(word) >= 4:
+        word = word[:-1]
+    return word
 
-    Relevance. Pexels returns results ordered by match to the query, and
-    that ordering is the only relevance information available. An earlier
-    version re-sorted by resolution, so a 4K clip of something unrelated
-    beat the 720p clip that was on topic every time -- the reason videos
-    kept drifting off theme. Only the top few results are considered.
 
-    Recency. Pexels has no sort-by-date, but ids increase with upload
-    time, so the highest id inside the relevance window is the newest of
-    the clips that actually match. Combined with size=medium (Full HD
-    floor) this keeps the soft, grainy, 2015-era uploads out.
+def _query_words(keyword: str) -> set[str]:
+    return {word for word in re.findall(r"[a-z0-9]+", keyword.lower())
+            if len(word) >= 3 and word not in _UNINFORMATIVE}
 
-    Falls back to an unfiltered search when the HD floor leaves nothing --
+
+def _title_words(video: dict) -> list[str]:
+    """The clip's title as Pexels spells it in the page URL,
+    e.g. https://www.pexels.com/video/an-animal-skull-7189100/."""
+    slug = (video.get("url") or "").rstrip("/").rsplit("/", 1)[-1]
+    return [word for word in slug.lower().split("-") if word and not word.isdigit()]
+
+
+def _match_score(keyword: str, video: dict) -> tuple[int, int]:
+    """(subject words matched, setting words matched) between query and clip title.
+
+    Words are compared after _stem. Stems of four letters or more also match
+    inside each other, so "prison" meets "prisoner" and "nails" meets
+    "fingernails"; shorter ones must match whole, or "old" would match
+    "golden". Setting words only count once a subject word has matched.
+    """
+    title = [_stem(t) for t in _title_words(video)]
+
+    def found(word: str) -> bool:
+        word = _stem(word)
+        return any(word == t or (len(word) >= 4 and len(t) >= 4 and (word in t or t in word))
+                   for t in title)
+
+    words = _query_words(keyword)
+    subject = sum(1 for word in words - _SETTING_WORDS if found(word))
+    setting = sum(1 for word in words & _SETTING_WORDS if found(word)) if subject else 0
+    return subject, setting
+
+
+def _pexels(keyword: str, output_path: str, used_ids: set | None = None,
+            require_match: bool = False) -> str | None:
+    """Download the portrait clip that best fits `keyword`.
+
+    Pexels orders results by relevance, and that order is the base: an
+    earlier version re-sorted by resolution and kept drifting off theme. On
+    top of it, a clip whose title names more of the query's subject moves up,
+    and with `require_match` a clip that names none of it is not taken at
+    all, so the caller can try its fallback query before settling.
+
+    A recency rule used to sit here as well -- the newest id among the top
+    four, to keep soft 2015-era uploads out -- and it chose the wrong clip
+    whenever a newer upload ranked lower. "animal bone sculpture" ranked an
+    animal skull first and took "playful dog chewing bone", fourth and
+    newest; "old thai prime minister portrait" took a vintage book display,
+    which aired in EP.49 as a Turkish novelist's book cover. size=medium (a
+    Full HD floor) already keeps the soft uploads out, so the rule went.
+
+    Falls back to an unfiltered search when the HD floor leaves nothing
+    usable (no clip at all, or with `require_match` none that matches) --
     niche queries sometimes have only a handful of portrait clips at all.
 
     `used_ids` is mutated with whatever gets taken, so one clip cannot
@@ -86,9 +166,12 @@ def _pexels(keyword: str, output_path: str,
             if len(candidates) >= _RELEVANCE_WINDOW:
                 break
 
-        # Newest among the most relevant, then next-newest if it won't download.
-        for video in sorted(candidates, key=lambda v: v.get("id", 0),
-                            reverse=True):
+        # sorted() is stable, reverse included, so clips that match equally
+        # keep Pexels' order.
+        ranked = sorted(candidates, key=lambda v: _match_score(keyword, v), reverse=True)
+        if require_match:
+            ranked = [v for v in ranked if _match_score(keyword, v)[0] > 0]
+        for video in ranked:
             try:
                 path = _download(_best_portrait_file(video), output_path)
             except Exception:
@@ -165,14 +248,22 @@ def fetch_multiple_clips(keywords: list, output_dir: str) -> list[str]:
         else:
             specific, fallback = kw, kw
 
-        result = (_pexels(specific, out, used_ids)
-                  or _pixabay(specific, out, used_ids)
-                  or _pexels(fallback, out, used_ids)
-                  or _pixabay(fallback, out, used_ids))
+        result = (_pexels(specific, out, used_ids, require_match=True)
+                  or _pexels(fallback, out, used_ids, require_match=True))
+        matched = result is not None
+        # A clip whose title shares nothing with either query is the last
+        # resort, taken only so the sentence still has footage: a sentence left
+        # without one shifts every later clip onto the wrong sentence.
+        if not result:
+            result = (_pexels(specific, out, used_ids)
+                      or _pixabay(specific, out, used_ids)
+                      or _pexels(fallback, out, used_ids)
+                      or _pixabay(fallback, out, used_ids))
 
         if result:
             paths.append(result)
-            print(f"    [{i+1}/{len(keywords)}] OK: {specific[:35]}")
+            note = "" if matched else "  (no title match)"
+            print(f"    [{i+1}/{len(keywords)}] OK: {specific[:35]}{note}")
         else:
             print(f"    [{i+1}/{len(keywords)}] SKIP: {specific[:35]}")
     return paths
