@@ -19,7 +19,7 @@ import os
 import subprocess
 import urllib.parse
 
-import requests
+from src import pollinations
 
 W, H = 1080, 1920
 FPS  = 30
@@ -37,16 +37,12 @@ def _fetch_image(prompt: str, dst: str, seed: int) -> bool:
     url = ("https://image.pollinations.ai/prompt/"
            + urllib.parse.quote(f"{prompt}, {_STYLE_SUFFIX}")
            + f"?width={W}&height={H}&model=flux-pro&nologo=true&seed={seed}")
-    try:
-        r = requests.get(url, timeout=120)
-    except Exception as e:
-        print(f"    [ai-broll] fetch failed: {type(e).__name__}")
-        return False
-    if r.status_code != 200 or len(r.content) < 1000:
-        print(f"    [ai-broll] fetch failed: HTTP {r.status_code}")
+    image = pollinations.fetch(url, timeout=120)
+    if image is None:
+        print("    [ai-broll] fetch failed")
         return False
     with open(dst, "wb") as f:
-        f.write(r.content)
+        f.write(image)
     return True
 
 
