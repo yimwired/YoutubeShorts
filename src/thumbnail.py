@@ -3,6 +3,8 @@ import requests
 import subprocess
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from src import pollinations
+
 _BASE       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONT_IMPACT = "C:/Windows/Fonts/impact.ttf" if os.name == "nt" else os.path.join(_BASE, "Kanit-Bold.ttf")
 FONT_BOLD   = "C:/Windows/Fonts/arialbd.ttf" if os.name == "nt" else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -45,15 +47,12 @@ def _fetch_pollinations(prompt: str, output_path: str,
     url = (f"https://image.pollinations.ai/prompt/{urllib.parse.quote(p)}"
            f"?width=1080&height=1920&model=flux-pro&nologo=true"
            f"&seed={s}")
-    try:
-        r = requests.get(url, timeout=90)
-        if r.status_code == 200 and len(r.content) > 1000:
-            with open(output_path, "wb") as f:
-                f.write(r.content)
-            return output_path
-    except Exception:
-        pass
-    return None
+    image = pollinations.fetch(url, timeout=90)
+    if image is None:
+        return None
+    with open(output_path, "wb") as f:
+        f.write(image)
+    return output_path
 
 
 def _fetch_pexels_photo(keyword: str, output_path: str) -> str | None:
@@ -226,7 +225,10 @@ def create_thumbnail(video_path: str, title: str, output_path: str,
     #    watchers and returning subscribers recognize the format. ─────
     if series_tag and episode:
         draw = ImageDraw.Draw(base)
-        sf   = ImageFont.truetype(FONT_BOLD, 40)
+        # The tag is Thai on the Thai channel ("ที่มาของ #49"). FONT_BOLD is
+        # DejaVu on the runner, which has no Thai glyphs, so every published
+        # thumbnail carried a row of tofu boxes here until 2026-10-14.
+        sf   = ImageFont.truetype(FONT_TH if lang == "th" else FONT_BOLD, 40)
         txt  = f"{series_tag} #{episode}"
         tw   = int(draw.textlength(txt, font=sf))
         pad  = 18
