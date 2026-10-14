@@ -230,6 +230,24 @@ def _video_seconds(path: str) -> float | None:
         return None
 
 
+def _sentence_visuals(sentences: list[dict], clips: list[str]) -> list[dict] | None:
+    """What each sentence was shown over: the stock query, the generated-image
+    prompt if it asked for one, and which of the two actually made it on screen.
+
+    Until 2026-10-14 the only record of this was the Actions log, which is how
+    a book cover under the line about Field Marshal Phibun took a log dig to
+    explain. Kept per sentence so it lines up with `sentences` and the
+    per-sentence retention report. None when clips and sentences do not pair
+    one to one, because then which clip played under which line is a guess.
+    """
+    if not sentences or len(clips) != len(sentences):
+        return None
+    return [{"keyword":   s.get("keyword") or None,
+             "ai_prompt": (s.get("ai_prompt") or "").strip() or None,
+             "source":    "ai" if os.path.basename(clip).startswith("broll_") else "stock"}
+            for s, clip in zip(sentences, clips)]
+
+
 def _build_entity_overlays(data: dict, timestamp: int,
                            th_boundaries: list[dict]) -> list[dict]:
     """Download images for `data['entities']` and window them to the
@@ -455,6 +473,7 @@ def generate_one(index: int, publish_at: str) -> None:
         # slot names, since the human format has six beats of its own.
         "style":          style,
         "sentences":      _sentence_timeline(sentences_th, th_boundaries),
+        "visuals":        _sentence_visuals(data.get("sentences", []), clips),
         "video_sec":      _video_seconds(final_th),
         # The research the script was allowed to draw on, verbatim. The
         # no-invention rule is a prompt rule, and prompt rules do not hold on
