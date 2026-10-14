@@ -7,8 +7,8 @@
 
 ## 2026-10-14 — Session 7 (ภาพ AI ได้ใบเดียวต่อคลิปมาตลอด + ป้ายซีรีส์บนปกเป็นกล่อง + captions GPU)
 
-Film ไปสอบ สั่ง "ต่อไปเรื่อยๆ". **commit ในเครื่อง 4 ตัว ยังไม่ push** (production รันทุกเช้า ให้ Film ดูก่อน):
-`6ad9c752` captions · `ea270bad` Pollinations · `e675af73` thumbnail · `f7c04195` visuals. push ต้อง `git pull --rebase` ก่อนเพราะ Action commit ทุกวัน
+Film ไปสอบ สั่ง "ต่อไปเรื่อยๆ". 4 commit แรก **push แล้ว** หลัง Film สั่ง (rebase แล้วเป็น `0a2d20ba` captions · `7c7c8818` Pollinations ·
+`e9cab5f7` thumbnail · `334c1c7c` visuals · `90714fc0` log). ไม่มี workflow รันตอน push เริ่มใช้รอบ 06:00 วันที่ 10-15
 
 **dry run ทั้ง 4 commit ผ่าน** (`DRY_RUN=1 python generate_batch.py 2` บน HEAD `f7c04195`): 2/2 คลิปออก ·
 explainer (ศรีราชา) b-roll AI **3/3** + ปก AI A/B **2/2** ภาพต่างกัน · `visuals` ถูก (ประโยค 0, 1, 4 = `ai` ที่เหลือ `stock`) ·
@@ -41,11 +41,23 @@ explainer (ศรีราชา) b-roll AI **3/3** + ปก AI A/B **2/2** ภ�
 - แก้: ลอง encoder 1 รอบตอนโหลด พังให้โหลดใหม่บน CPU และไม่ลอง cuda ซ้ำ · หา DLL ใน user site ด้วย
 - verify: cuda ปกติ 141 คำ · cuBLAS หาย ถอยไป CPU ได้ 135 คำไม่ raise · ไม่มี GPU (`CUDA_VISIBLE_DEVICES=-1`) ใช้ CPU ตรงๆ เหมือน CI
 
+### ภาพ stock ไม่ตรงเรื่อง (Film สั่ง 10-14 บ่าย "5 ก็ดี")
+
+- **สาเหตุจริงไม่ใช่ keyword แย่ แต่เป็นกฎเลือก** ใน `_pexels`: id ใหม่สุดใน 4 อันดับแรก (ตั้งใจหลบคลิปเก่าภาพแตก). คลิปใหม่มักตรงน้อยกว่า:
+  `animal bone sculpture` อันดับ 1 = กะโหลกสัตว์ แต่ได้ "playful dog chewing bone" (อันดับ 4) = หมาในคลิปแปรงสีฟัน ·
+  `old thai prime minister portrait` = "vintage book display" (ปกหนังสือตุรกี EP.49) · `family secret revealed` = picnic ฟอยล์ (EP.49) ·
+  `nylon thread manufacturing` = หลอดพลาสติก แทนด้ายในจักร (อันดับ 1)
+- แก้ `src/footage.py`: จัดอันดับด้วยจำนวนคำหัวข้อใน query ที่อยู่ในชื่อคลิป (slug ใน URL ของ Pexels) หลังตัด suffix แบบหยาบ เสมอกันใช้ลำดับของ Pexels ·
+  คำบอกยุค/สถานที่ (`thai`, `old`, `vintage`, ...) ใช้ตัดสินเสมอเท่านั้น ทำให้คลิป "ตรง" เองไม่ได้ · ต้องตรงกับ keyword หลักหรือสำรอง
+  ไม่ตรงทั้งคู่ค่อยใช้ chain เดิม (log ขึ้น `(no title match)`) ทุกประโยคยังได้คลิปเสมอ · cache การค้นต่อ run
+- verify: unit 12 เคส · ยิง Pexels จริง 46 query จาก 6 คลิปล่าสุด: เปลี่ยน 32 เคสที่ออกอากาศผิดทั้ง 4 ได้คลิปตรง
+  (+ "magic cube" ได้คนเล่นรูบิค แทนคริสตัลม่วง, "sanskrit calligraphy" ได้พู่กันจีน แทนแมวนอนข้างป้าย) ·
+  รอบแรกที่ไม่มีตัวกันคำบอกบริบทแย่ลง 6 เคส ปรับแล้วเหลือแค่เคสที่เปลี่ยนแบบไม่ดีไม่แย่ ·
+  dry run คลิป Bluetooth: footage ตรงทุกประโยค ภาพ AI 3/3 ปก 2/2 (ตัวอย่างใน `G:\YoutubeShorts-archive\dryrun-2026-10-14\`)
+- **commit ในเครื่อง ยังไม่ push** รอ Film สั่ง (เปลี่ยนการเลือกภาพของทุกคลิป)
+
 ### ค้าง
 
-- **Film ตัดสิน**: push 3 commit ข้างบน (ผมไม่ push ตอนไม่มีคนดู)
-- ภาพ stock ไม่ตรงเรื่องยังมีในประโยคที่ไม่มี `ai_prompt` (คลิปแปรงสีฟัน: "ใช้กระดูกสัตว์เจาะรูและขนหมูป่า" ได้ภาพหมานอน).
-  ยังไม่ได้แก้ เพราะต้องตัดสินว่าจะให้ AI ทำภาพมากขึ้น (เวลา run เพิ่มประโยคละ ~46 วิ) หรือคัด keyword ให้ดีขึ้น
 - ~~job json ไม่ได้เก็บ keyword / ai_prompt / แหล่งภาพต่อประโยค~~ เพิ่ม `visuals` แล้ว (`f7c04195`): ต่อประโยคมี `keyword`, `ai_prompt`, `source` = `ai`/`stock`.
   `retention_by_line.py` ยังไม่ได้แยกผลตาม `source` (ทำได้เมื่อมีคลิปที่มี field นี้พอ)
 - บั๊กแฝง: `fetch_multiple_clips` ข้าม keyword ที่หาไม่เจอโดยไม่เว้นช่อง ภาพหลังจากนั้นจะเลื่อนประโยค. **40 คลิปล่าสุดไม่เคยเกิด** (keyword สำรองเจอเสมอ) เลยยังไม่แก้
