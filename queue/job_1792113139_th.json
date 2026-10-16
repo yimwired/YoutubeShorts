@@ -1,0 +1,102 @@
+{
+  "timestamp": 1792113139,
+  "lang": "th",
+  "title": "GPS: จากดาวเทียม สู่มือถือแม่นยำ",
+  "title_full": "GPS: จากดาวเทียม สู่มือถือแม่นยำ",
+  "description": "เดาว่า GPS แม่นยำปีไหน?\n\nเคยสงสัยไหมว่า GPS ในมือถือของเรามีจุดเริ่มต้นมาจากไหน? เทคโนโลยีนี้มีความเป็นมาที่น่าทึ่งและเชื่อมโยงกับการทหารอย่างคาดไม่ถึง ติดตามเพื่อรับความรู้ใหม่ทุกวัน!\n\n#Shorts #GPS #เทคโนโลยี #ดาวเทียม #ประวัติศาสตร์ #Google Maps",
+  "tags": [
+    "shorts",
+    "GPS",
+    "เทคโนโลยี",
+    "ดาวเทียม",
+    "ประวัติศาสตร์",
+    "Google Maps",
+    "ความรู้รอบตัว",
+    "วิทยาศาสตร์"
+  ],
+  "topic": "GPS: จากดาวเทียมสู่มือถือ",
+  "brief_source": "evergreen",
+  "script": "GPS ที่ใช้กันทุกวันนี้ เคยพลาดเป้าถึงร้อยเมตร จริง! ช่วงแรก GPS พลเรือนคลาดเคลื่อนได้ถึงร้อยเมตร จุดเริ่มต้นปี 1957 สหรัฐฯ สังเกตดาวเทียมสปุตนิก ปี 1983 กองทัพสหรัฐฯ ประกาศให้พลเรือนใช้ GPS ยกเลิกจำกัดความแม่นยำปี 2000 ทำให้ Google Maps ปัง ความแม่นยำร้อยเมตรในวันนั้น คือ GPS ที่เราใช้",
+  "word_count": 60,
+  "speech_sec": 36.3,
+  "style": "explainer",
+  "sentences": [
+    {
+      "text": "GPS ที่ใช้กันทุกวันนี้ เคยพลาดเป้าถึงร้อยเมตร",
+      "start": 0.0,
+      "end": 3.74
+    },
+    {
+      "text": "จริง! ช่วงแรก GPS พลเรือนคลาดเคลื่อนได้ถึงร้อยเมตร",
+      "start": 6.1,
+      "end": 10.08
+    },
+    {
+      "text": "จุดเริ่มต้นปี 1957 สหรัฐฯ สังเกตดาวเทียมสปุตนิก",
+      "start": 12.43,
+      "end": 17.13
+    },
+    {
+      "text": "ปี 1983 กองทัพสหรัฐฯ ประกาศให้พลเรือนใช้ GPS",
+      "start": 19.54,
+      "end": 24.14
+    },
+    {
+      "text": "ยกเลิกจำกัดความแม่นยำปี 2000 ทำให้ Google Maps ปัง",
+      "start": 26.41,
+      "end": 30.2
+    },
+    {
+      "text": "ความแม่นยำร้อยเมตรในวันนั้น คือ GPS ที่เราใช้",
+      "start": 32.56,
+      "end": 36.31
+    }
+  ],
+  "visuals": [
+    {
+      "keyword": "GPS accuracy history",
+      "ai_prompt": "Close up of a smartphone screen showing a navigation app with a large '100m error' warning overlayed on the map, digital glitch effect",
+      "source": "ai"
+    },
+    {
+      "keyword": "GPS civilian accuracy",
+      "ai_prompt": null,
+      "source": "stock"
+    },
+    {
+      "keyword": "Sputnik satellite 1957 observation",
+      "ai_prompt": "1950s scientists in a retro control room observing Sputnik satellite launch on a screen, grainy black and white photo, vintage technology",
+      "source": "ai"
+    },
+    {
+      "keyword": "GPS civilian access 1983",
+      "ai_prompt": null,
+      "source": "stock"
+    },
+    {
+      "keyword": "GPS selective availability cancelled 2000",
+      "ai_prompt": "Split screen: Left side shows blurry satellite map with '100m error' stamp, Right side shows crisp Google Maps interface on a smartphone, modern clean design",
+      "source": "ai"
+    },
+    {
+      "keyword": "GPS evolution accuracy",
+      "ai_prompt": null,
+      "source": "stock"
+    }
+  ],
+  "video_sec": 36.84,
+  "brief_raw": "TOPIC: GPS: จากดาวเทียมสู่มือถือ\nANGLE: ค้นพบจุดเริ่มต้นของเทคโนโลยี GPS ที่เชื่อมโยงการทหารกับการใช้งานในชีวิตประจำวันของเรา\nORIGIN: สหรัฐอเมริกา, ปี 1957\nSPREAD: เริ่มต้นจากการสังเกตการณ์ดาวเทียมสปุตนิกของสหภาพโซเวียต ทำให้นักวิทยาศาสตร์พบ Doppler Effect ซึ่งนำไปสู่การพัฒนาต่อยอดโดยกองทัพเรือสหรัฐฯ และกระทรวงกลาโหมสหรัฐฯ จนแพร่หลายสู่พลเรือนในปี 1983 หลังเหตุการณ์เครื่องบินตก\nNUMBERS: 24 ดวง (จำนวนดาวเทียมในระบบ GPS ที่สมบูรณ์), 1978 (ปีที่ส่งดาวเทียม GPS ดวงแรก), 1983 (ปีที่ประกาศให้พลเรือนใช้งาน GPS ได้)\nSURPRISE: ในช่วงแรก GPS มีการจำกัดความแม่นยำสำหรับพลเรือน (Selective Availability) ทำให้สัญญาณคลาดเคลื่อนถึง 100 เมตร จนกระทั่งปี 2000 จึงได้ยกเลิกนโยบายนี้ ทำให้ GPS แม่นยำขึ้นอย่างมาก และเป็นจุดเปลี่ยนสำคัญที่ทำให้แอปพลิเคชันอย่าง Google Maps ได้รับความนิยม\nCONFIDENCE: high",
+  "cta": "เดาว่า GPS แม่นยำปีไหน?",
+  "video_path": "output/short_1792113139_th.mp4",
+  "thumb_path": "output/thumb_1792113139_th.jpg",
+  "thumb_path_b": "output/thumb_1792113139_th_b.jpg",
+  "ab_swapped": false,
+  "publish_at": "2026-10-16T12:00:00+07:00",
+  "notion_page_id": "3fb316f4814981e29f79dd8566bf079d",
+  "created_at": "2026-10-16T08:18:09.669274+07:00",
+  "status": "uploaded",
+  "youtube_url": "https://youtu.be/BLXgtxXTnKU",
+  "youtube_video_id": "BLXgtxXTnKU",
+  "tiktok_url": null,
+  "uploaded_at": "2026-10-16T08:18:14.287939+07:00"
+}
