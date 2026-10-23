@@ -38,7 +38,7 @@ def _next_bucket(style: str, cats: list[str]) -> str:
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-SYSTEM_PROMPT_TRENDING = """You are a Thai YouTube Shorts scriptwriter in the style of @develian_g —
+SYSTEM_PROMPT_TRENDING = """You are a Thai YouTube Shorts scriptwriter whose voice is
 a friend casually telling you a wild-but-true fact. Conversational, playful, slightly cheeky.
 
 ACCURACY IS NON-NEGOTIABLE:

@@ -5,6 +5,63 @@
 
 ---
 
+## 2026-10-24 - Session 9 (retention รายประโยคครั้งแรก: คนหลุดที่ประโยค 2 · key Shorts กับ Moon อยู่ project เดียวกัน)
+
+ทำจาก session ที่ `C:\Users\fyimn` (Film: ทำของที่เลยกำหนด + "เอาตามเหมาะ" กับของที่รอตัดสิน)
+
+### retention_by_line ผลจริงครั้งแรก (เลยกำหนด 10-18/19 มา 5 วัน)
+
+`git pull` (28 commit ของ Action) แล้วรัน `python tools/retention_by_line.py`: 18 คลิป (10-12 ถึง 10-21, 9 default + 9 human),
+`LmhBtzUWPC4` ยังไม่มีแถว. ผลเต็มเก็บไว้ที่ scratchpad ของ session นี้ (หายตอนปิด) รันซ้ำได้ตลอด
+
+- **ประโยค 2 (PROOF) ชันสุด 17 จาก 18 คลิป**: ค่ากลาง default เสีย 33.4 pts (7.7/วิ), human 38.8 pts (10.1/วิ).
+  hook เสียแค่ 10.5 / 7.9 pts. ประโยค 4 ถึง 6 เสียรวมกันน้อยกว่าประโยค 2 ประโยคเดียว
+- **ช่วงเงียบหลัง hook ก็กินคน**: ยิ่งเว้นนานยิ่งหลุด 2.2 วิ หาย 29 pts (`alnyxKeQTGc`), 2.4 วิ 25 (`BLXgtxXTnKU`), 1.8 วิ 15,
+  ราว 1 วิ หาย 1 ถึง 7. ตัวเลขนี้ไม่ได้อยู่ในรายงาน (รายงานนับเฉพาะช่วงที่มีเสียง) คำนวณจากค่าหัวท้ายของประโยคติดกัน
+- **ดูจบ**: default ค่ากลาง 0.33 ของคนเริ่ม, human 0.23. human หลุดหนักกว่าใน MECHANISM/WHY ด้วย
+- **ข้อควรระวัง**: ประโยค 2 อยู่ตำแหน่งวิ 4 ถึง 10 ทุกคลิป ซึ่งเป็นช่วงที่คนตัดสินใจปัดของ Shorts อยู่แล้ว
+  ข้อมูลชุดนี้แยกไม่ออกว่าหลุดเพราะ "เนื้อประโยค 2" หรือเพราะ "ตำแหน่ง". จะรู้ต้องเปลี่ยนแค่อย่างเดียวแล้ววัดใหม่
+- ข้อเสนอ (ยังไม่ทำ รอ Film สั่ง): ทดลองครั้งละอย่าง เริ่มจากกดช่วงเงียบระหว่างประโยคไม่ให้เกินราว 0.4 วิ เพราะถูกและย้อนกลับง่ายสุด
+  แล้วรัน `retention_by_line.py --days 7` หลังผ่านไป 9 วัน
+
+### Gemini 429 ทุกเช้า: key ของ repo นี้กับ Moon อยู่ project เดียวกัน (ตัดสินแทน Film)
+
+- `rate_usage.json`: repo นี้ใช้ gemini แค่ 3 ถึง 7 ครั้งต่อวัน (10-14 ถึง 10-23) ห่างจากโควตา 20 มาก แต่ยังโดน 429 ตอน 08:2x
+  แปลว่ามีตัวอื่นกินก้อนเดียวกัน คือ pulse ของ Moon ที่ยิง flash ทุกชั่วโมง (`DEFAULT_MODEL = gemini-2.5-flash`)
+- เวลารีเซ็ต: 10-24 01:50 ไทย probe ของ Moon ยิง flash ผ่านทั้งที่ pulse ยิงมาทั้งคืน ถ้ารีเซ็ต 07:00 โควตาต้องหมดไปแล้ว
+  จึงเข้ากับ docs ว่ารีเซ็ตตอนเที่ยงคืน Pacific (14:00 ไทยช่วง PDT, 15:00 หลัง 11-01). รอบ 08:20 ของ repo นี้จึงมาหลัง pulse กินไป 18 ชม.
+- key ในเครื่องสองตัวคนละค่ากัน (fingerprint ไม่ตรง) แต่โควตานับต่อ project ไม่ใช่ต่อ key
+- **ทางแก้ที่เลือก**: แยก project ให้ repo นี้ ไม่แตะ pulse (Film ตัดสินไว้แล้วว่าไม่ย้าย pulse ไป flash-lite).
+  ส่วนที่ต้องใช้มือ Film มีขั้นเดียว: aistudio.google.com/apikey > Create API key > **Create API key in new project** แล้ววาง key
+  แทนบรรทัด `GEMINI_API_KEY` ใน `.env` ของ repo นี้. จากนั้น Claude ส่งขึ้น GitHub secret ด้วย `gh secret set` โดยไม่พิมพ์ key ออกมา
+
+### voice `@develian_g` (ตัดสินแทน Film)
+
+- ชื่อ handle อยู่ใน `SYSTEM_PROMPT_TRENDING` ซึ่งใช้แค่ `generate_fact_script` (`main.py` CLI + `test_*.py`).
+  production (`generate_batch.py`) ใช้ `generate_explainer_script` / `generate_human_script` ไม่ได้ผ่าน prompt นี้เลย
+- ไม่ย้ายไปเป็นไฟล์ เพราะไม่มีผลกับคลิปจริง. แค่ลบชื่อ handle ออก (บรรทัดถัดไปบรรยายน้ำเสียงไว้ครบแล้ว) import ผ่าน
+
+## 2026-10-15 - Session 8 (เช็ค run แรกของโค้ด Session 7: ผ่านครบ · โควตา flash หมดทุกเช้า ไม่ใช่ของใหม่)
+
+เช็คจาก session ของ AURUM ไม่ได้แก้โค้ด. run `38665076980` (schedule เริ่ม 08:20 ไทย, 9m24s) success, 2/2 คลิป upload + ตั้งเวลาแล้ว
+
+**เช็คที่ Session 7 จดไว้: ผ่านทั้ง 4**
+- `[ai-broll]` ขอ 2 ประโยค (0 และ 4) ได้ไฟล์ครบ 2
+- `[Thumbnail] AI image OK` 2 ครั้งในคลิป explainer (Bluetooth)
+- `(no title match)` 1 บรรทัดทั้งรอบ (Bluetooth ช่อง 1/6 `viking king historical illustration`)
+- ปกที่ Action commit (`output/thumb_1792027337_th_b.jpg` ใน `6f7c1b3`): ป้ายซีรีส์ "ที่มาของ #54" กับหัวเรื่องเป็นตัวไทย วรรณยุกต์ครบ
+
+**เจอ (รอ Film ตัดสิน)**
+- `gemini-2.5-flash` 429 RESOURCE_EXHAUSTED ทุกรอบเช้า: 10-14 08:43 โดนตั้งแต่คลิปแรก, 10-15 08:29 โดนกลางคลิปที่ 2
+  (retry 2 รอบห่าง 22 วิยังโดน = โควตารายวัน). ตกไป flash-lite แล้ว `no attempt passed every check — shipping the closest`
+  ทั้งสองวัน. 10-15 ที่ไม่ผ่านคือ keyword footage นามธรรม (`person feeling happy relief`, `person looking relaxed at home`
+  ยังอยู่ในคลิป "ข้าวคลุกน้ำปลา" ที่ตั้งเวลาลง 10-16 08:00). **ไม่ใช่ผลของโค้ด Session 7** เพราะ 10-14 ก่อนใช้โค้ดใหม่ก็โดน
+- free tier flash = 20 request/วัน/project/model (Moon Session 43). โควตานับต่อ **project** ไม่ใช่ต่อ key: ถ้า key ของ repo นี้
+  กับของ Moon มาจาก project เดียวกัน pulse รายชั่วโมงของ Moon กินก้อนเดียวกัน. ยังไม่ได้เช็คว่าเป็น project เดียวกันไหม
+  (Film ดูได้ใน AI Studio หน้า API keys). ถ้าใช่ = แยก project ให้ repo นี้ ไม่ต้องแตะ pulse ที่ Film ตัดสินไว้แล้ว
+- เวลารีเซ็ตยังไม่ชัด: docs บอกเที่ยงคืน Pacific (14:00 ไทยช่วง PDT) แต่ retryDelay จริงของ Moon 10-14 ชี้ราว 07:00 ไทย
+- ปก AI มีลายน้ำ `pollinations.ai` จางๆ มุมขวาล่าง
+
 ## 2026-10-14 — Session 7 (ภาพ AI ได้ใบเดียวต่อคลิปมาตลอด + ป้ายซีรีส์บนปกเป็นกล่อง + captions GPU)
 
 Film ไปสอบ สั่ง "ต่อไปเรื่อยๆ". 4 commit แรก **push แล้ว** หลัง Film สั่ง (rebase แล้วเป็น `0a2d20ba` captions · `7c7c8818` Pollinations ·
