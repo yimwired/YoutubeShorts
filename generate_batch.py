@@ -477,9 +477,9 @@ def generate_one(index: int, publish_at: str) -> None:
         "video_sec":      _video_seconds(final_th),
         # The research the script was allowed to draw on, verbatim. The
         # no-invention rule is a prompt rule, and prompt rules do not hold on
-        # gemini-2.5-flash-lite, which is what the daily job falls back to
-        # most days. When a viewer disputes a fact, this is the only way to
-        # tell whether the writer made it up or the research did.
+        # the lite model, which is what the daily job falls back to whenever
+        # flash is out of quota. When a viewer disputes a fact, this is the
+        # only way to tell whether the writer made it up or the research did.
         "brief_raw":      brief.raw,
         # Posted by seed_comments.py once the video is public -- see the note
         # in src/uploader.py about why it cannot go up at insert time.

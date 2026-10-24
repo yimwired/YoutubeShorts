@@ -32,6 +32,7 @@ try:
 except ImportError:
     _CLIENT = None
 
+from src.gemini_models import RESEARCH_FLASH, RESEARCH_LITE
 from src.rate_tracker import record
 
 # Flash first: the lite tier is noticeably worse at holding a grounded
@@ -42,7 +43,10 @@ from src.rate_tracker import record
 # project (GenerateRequestsPerDayPerProjectPerModel-FreeTier). The daily
 # run needs two, so a couple of manual test runs are enough to exhaust it,
 # and without a second model a 429 at 06:00 means no video that day.
-_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+#
+# Both stay on 2.5: it is the only family the free tier grounds on (see
+# src/gemini_models.py).
+_MODELS = [RESEARCH_FLASH, RESEARCH_LITE]
 
 # 429 responses carry retryDelay ~20s (per-minute window). Waiting it out
 # is worth it for a job that runs once a day.

@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+from src.gemini_models import SCRIPT_FLASH, SCRIPT_LITE
 from src.rate_tracker import record
 
 try:
@@ -207,7 +208,7 @@ def _call_groq(messages: list, max_tokens: int = 600) -> str:
 
 def _call_gemini(messages: list, max_tokens: int = 1200,
                  json_mode: bool = True,
-                 model: str = "gemini-2.5-flash-lite",
+                 model: str = SCRIPT_LITE,
                  thinking_budget: int | None = None,
                  response_schema: dict | None = None) -> str:
     """Gemini. JSON output by default (script generation);
@@ -246,7 +247,7 @@ def _call_gemini(messages: list, max_tokens: int = 1200,
 
 def _llm_call(messages: list, max_tokens: int = 1200,
               json_mode: bool = True,
-              model: str = "gemini-2.5-flash-lite",
+              model: str = SCRIPT_LITE,
               thinking_budget: int | None = None) -> str:
     """Try Gemini first, fall back to Groq on any failure."""
     if _GEMINI_AVAILABLE:
@@ -697,7 +698,7 @@ def _write_thai_script(system_prompt: str, prompt: str,
 
     # flash first: this call has to hold a 6-field brief, a 6-sentence
     # structure and a no-invention rule at the same time, and lite drifts on
-    # the sourcing rule first. But flash's free tier is 20 requests a day
+    # the sourcing rule first. But flash's free tier is a small daily quota
     # for the whole project, so lite has to be able to take over -- a weaker
     # script beats no video.
     #
@@ -712,8 +713,7 @@ def _write_thai_script(system_prompt: str, prompt: str,
     data, closest = None, None
     retry_note = ""
     if _GEMINI_AVAILABLE:
-        for model in ("gemini-2.5-flash", "gemini-2.5-flash-lite",
-                      "gemini-2.5-flash-lite"):
+        for model in (SCRIPT_FLASH, SCRIPT_LITE, SCRIPT_LITE):
             try:
                 raw = _call_gemini(
                     [messages[0], {"role": "user",

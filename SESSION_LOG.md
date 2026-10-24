@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-10-24 - Session 9c (สคริปต์ย้ายไป 3.8-flash บน key เดิม · research อยู่ 2.5 · key project ใหม่ใช้กับ repo นี้ไม่ได้)
+
+Film: "เอา" กับแผน 9b (ย้าย key + 3.x, เทสต์ 3 สคริปต์ก่อน push)
+
+- **แผน 9b ใช้ไม่ได้**: key project ใหม่ยิง research แล้ว 429 ทุก model ตั้งแต่ครั้งแรก (3 หัวข้อ x 2 model x 3 retry).
+  plain call ผ่าน แต่ grounded ไม่ผ่าน. หน้า pricing: free tier ช่อง "Grounding with Google Search" ของ 3.8-flash,
+  3.5-flash-lite, 3.1-flash-lite = "Not available" มีแค่ 2.5 ที่ให้ 500 RPD. project ใหม่เรียก 2.5 ไม่ได้ = research ตาย
+- **ทำแทน**: แยก model ตามขั้นใน `src/gemini_models.py` (ใหม่). research อยู่ 2.5 เหมือนเดิม,
+  สคริปต์ไป `gemini-3.8-flash` แล้ว `gemini-3.5-flash-lite` x2 (`src/generator.py` chain + default ของ `_call_gemini`/`_llm_call`).
+  โควตา free tier นับต่อ project ต่อ model สคริปต์เลยไม่แย่ง 2.5-flash กับ pulse ของ Moon อีก. comment ใน
+  `src/research.py`, `generate_batch.py`, `CLAUDE.md` (หัวข้อ "Model แยกรุ่นตามขั้น") แก้ตาม
+- **GitHub secret ไม่ได้เปลี่ยน** (ตั้งใจ): key เดิมคือตัวเดียวที่ทำได้ทั้ง grounding 2.5 และ 3.x.
+  พิสูจน์แล้ว: run 10-24 ใช้ `gemini-3.1-flash-tts-preview` ได้ และ key Moon (project เดียวกัน) เรียก 3.8-flash ได้ 2/2
+- **เทสต์ (brief จริงจาก queue, ไม่ render ไม่ upload)** เทียบกับที่ขึ้นช่องจาก brief เดียวกัน:
+  - เกมเศรษฐี: ของเดิม 2.5-flash 65 คำ ลำดับวน ("แต่กฎผูกขาดกลับเป็นที่นิยมกว่า" ลอยๆ) · ใหม่ 3.8-flash 68 คำ เล่าเป็นเส้นเดียว Magie > Darrow > Parker Brothers > $500
+  - ไมโครเวฟ: ของเดิม 60 คำ ประโยค 1 เป็นวลีขาด ประโยค 5 ซ้ำประโยค 1 · ใหม่ 3.8-flash 70 คำ ครบโครง มีไข่ระเบิดใส่หน้าเพื่อนจาก brief
+  - พูดกับตัวเอง (human): ทั้งคู่จบที่ lite (ของเดิม 2.5-lite หลัง 429, ใหม่ 3.5-lite หลัง 3.8 ตก abstract rule) คุณภาพพอกัน ประโยคปิดของใหม่อ่อนกว่า
+  - fact ทุกตัวในสคริปต์ใหม่มีใน brief. ใช้เวลา 50-140 วิต่อสคริปต์ (3.8-flash ช้าตอนคนใช้เยอะ, เจอ 503 หนึ่งครั้งตอน probe)
+- เจอเพิ่ม: `GROQ_API_KEY` ใน `.env` เครื่องนี้ตอบ 401 (fallback สุดท้ายของสคริปต์). GitHub ยังไม่ได้เช็ค
+- key project ใหม่ (fp `472537f75c86`) ยังอยู่ `.env` เครื่องนี้ ใช้เทสต์สคริปต์ได้ แต่รัน research ในเครื่องไม่ได้.
+  ย้าย Moon ไปใช้ก็ไม่ได้ เพราะ `jarvis_llm.py` ใช้ grounding 3 จุด
+
+### Next Step
+- 06:00 2026-10-25: ดู log run ว่า `[generator] gemini-3.8-flash:` ขึ้น และไม่มี 429 ที่ขั้นสคริปต์ (research ยังตกไป lite ได้ตามเดิม)
+- ถ้า 3.8-flash 503/429 บ่อย: ลำดับในสคริปต์สลับเป็น 3.5-flash (ตอบเป็น 3.6) ก่อน
+- เช็ค `GROQ_API_KEY` บน GitHub ว่ายังใช้ได้ไหม (ตอนนี้เป็นชั้นสุดท้ายก่อนไม่มีคลิป)
+
+## 2026-10-24 - Session 9b (key Gemini project ใหม่ได้แล้ว แต่ project ใหม่ใช้ 2.5 ไม่ได้ · ยังไม่ส่งขึ้น secret)
+
+- Film สร้าง key ใน project ใหม่ วางใน `.env` แล้ว (fp `472537f75c86`, รอบแรก 11:40 fp `021f85fd04ac` ไปตก project เดิม
+  เพราะ flash โดน 429 `GenerateRequestsPerDayPerProjectPerModel-FreeTier limit=20` ก่อนมีใครใช้)
+- key ใหม่: `gemini-2.5-flash` และ `gemini-2.5-flash-lite` ตอบ **404 "no longer available to new users"** ซึ่งเป็น 2 model ที่โค้ดใช้
+  (`src/generator.py:210,249,715`, `src/research.py:45`). ที่ใช้ได้บน key ใหม่ (เทสต์ 13:0x): `gemini-3.8-flash`, `gemini-3.5-flash`
+  (ตอบเป็น 3.6), `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-flash-latest` (= 3.8), `gemini-flash-lite-latest` (= 3.5-lite),
+  TTS `gemini-3.1-flash-tts-preview` ได้ audio
+- **ยังไม่ได้ `gh secret set`**: ส่งตอนนี้ run พรุ่งนี้ 404 ทุกสคริปต์. GitHub ยังใช้ key เดิม (project เดียวกับ Moon) ทำงานได้
+  ตอนเช้า flash โดน 429 แล้วตกไป flash-lite เหมือนเดิม. task ในเครื่อง `FactSnapBatch` / `FactSnapSwap` ปิดอยู่ตั้งแต่ มิ.ย. ไม่โดน
+- free tier ต่อ model ของรุ่น 3.x ไม่มีในหน้า docs (ดูได้ที่ aistudio.google.com/rate-limit ต้อง login)
+- รู้เพิ่ม: flash ฟรี 20 ครั้ง/วัน/project. Moon เรียก flash ทุกชั่วโมง = 24 ครั้ง เกินเองทุกวัน
+
+### Next Step
+- ~~รอ Film ตัดสิน ย้ายไป key ใหม่ + 3.x~~ Film "เอา" แล้ว ผลอยู่ Session 9c (key ใหม่ใช้ไม่ได้ ย้ายแค่ model สคริปต์)
+
 ## 2026-10-24 - Session 9 (retention รายประโยคครั้งแรก: คนหลุดที่ประโยค 2 · key Shorts กับ Moon อยู่ project เดียวกัน)
 
 ทำจาก session ที่ `C:\Users\fyimn` (Film: ทำของที่เลยกำหนด + "เอาตามเหมาะ" กับของที่รอตัดสิน)

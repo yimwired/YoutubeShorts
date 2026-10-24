@@ -135,7 +135,7 @@ generate_batch.py  → queue/job_<ts>_<lang>.json + output/short_<ts>_<lang>.mp4
 1. `src/trends.py:get_trend_candidates` — Google Trends RSS (TH+US) + YouTube most-popular chart TH, กรอง noise regex ออก. **ปิด default ตั้งแต่ 2026-09-20** — ต้องตั้ง `USE_TRENDING_TOPIC=1` ถึงจะเรียก (ช่วง 09-08..09-18 slot เดียวกัน: trend-sourced 10 คลิป median 12 วิว / retention 41.9% · evergreen 1 คลิป 1029 วิว / 71.8% — n=1 ยังสรุปไม่ได้ ปิดเทรนด์คือวิธีเพิ่ม sample ด้วย)
 2. `src/research.py:get_brief` — **Gemini + Google Search grounding** เลือกหัวข้อที่เล่า "ที่มา" ได้ แล้วขุด origin/spread/numbers/surprise. default ตอนนี้ไปที่ `research_evergreen()` จาก `EXPLAINER_CATEGORIES` ตรงๆ (เทรนด์ปิดอยู่). คืน `Brief` หรือ `None`
    · slot 08:00 ใช้ `research_human()` + `HUMAN_CATEGORIES` แทน — `Brief` ตัวเดียวกัน แต่ ORIGIN เก็บกลไก ไม่ใช่ปีก่อตั้ง
-3. `src/generator.py:generate_explainer_script` / `generate_human_script` — gemini-2.5-flash เขียนสคริปต์ไทย **6 ประโยค** (schema บังคับ, word count นับด้วยโค้ด retry ได้ 3 ครั้ง) **ห้ามใส่ fact ที่ไม่มีใน brief**. ทั้งคู่เรียก `_write_thai_script()` ตัวเดียวกัน ต่างที่ system prompt
+3. `src/generator.py:generate_explainer_script` / `generate_human_script` — gemini-3.8-flash (fallback 3.5-flash-lite) เขียนสคริปต์ไทย **6 ประโยค** (schema บังคับ, word count นับด้วยโค้ด retry ได้ 3 ครั้ง) **ห้ามใส่ fact ที่ไม่มีใน brief**. ทั้งคู่เรียก `_write_thai_script()` ตัวเดียวกัน ต่างที่ system prompt
 4. `src/footage.py:fetch_multiple_clips` — Pexels 1 clip ต่อประโยค
 5. `src/tts.py:generate_voiceover` — Gemini TTS → edge-tts Premwadee → gTTS (ดูหัวข้อ Voice)
 6. `main.py:_sync_th_subs` — silencedetect → TTS boundaries → Whisper → script split
@@ -148,6 +148,15 @@ generate_batch.py  → queue/job_<ts>_<lang>.json + output/short_<ts>_<lang>.mp4
 **ห้ามรวม tools กับ `response_mime_type=application/json` ใน call เดียว** — Gemini
 ตอบ 400 `Tool use with a response mime type: 'application/json' is unsupported`.
 นี่คือเหตุผลที่ research (grounded, plain text) กับ script (JSON, ไม่มี tool) แยกกัน.
+
+**Model แยกรุ่นตามขั้น** (`src/gemini_models.py`, ตั้งแต่ 2026-10-24):
+- research = 2.5-flash แล้ว 2.5-flash-lite. free tier ให้ Google Search grounding เฉพาะ 2.5
+  (500 RPD). 3.x ทุกตัวช่อง grounding ใน free tier = "Not available" ยิงแล้ว 429 ตั้งแต่ครั้งแรก
+- script = 3.8-flash แล้ว 3.5-flash-lite. โควตา free tier นับแยกต่อ model เลยไม่แย่ง 2.5-flash
+  กับ pulse ของ Moon ที่ใช้ project เดียวกันและกินหมดทุกเช้า
+- **ห้ามเปลี่ยน `GEMINI_API_KEY` เป็น key จาก project ที่สร้างหลัง 3.x ออก** - project ใหม่เรียก
+  2.5 ไม่ได้ (404 "no longer available to new users") = research ตาย = ไม่มีคลิป.
+  key ใน `.env` เครื่องนี้ (project ใหม่) จึงรัน research ในเครื่องไม่ได้ ใช้เทสต์สคริปต์ได้อย่างเดียว
 
 ## Voice
 
