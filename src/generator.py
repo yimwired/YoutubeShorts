@@ -38,6 +38,10 @@ def _next_bucket(style: str, cats: list[str]) -> str:
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+# llama-3.3-70b-versatile was retired by Groq and the fallback went on calling it
+# (model_not_found, found 2026-10-24). daily.yml probes this exact id on every run
+# and reads it from this line, so keep it a one-line string literal.
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 SYSTEM_PROMPT_TRENDING = """You are a Thai YouTube Shorts scriptwriter whose voice is
 a friend casually telling you a wild-but-true fact. Conversational, playful, slightly cheeky.
@@ -195,7 +199,7 @@ SYSTEM_PROMPT = SYSTEM_PROMPT_TRENDING  # default
 def _call_groq(messages: list, max_tokens: int = 600) -> str:
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     payload = {
-        "model": "llama-3.3-70b-versatile",
+        "model": GROQ_MODEL,
         "messages": messages,
         "temperature": 0.9,
         "max_tokens": max_tokens,

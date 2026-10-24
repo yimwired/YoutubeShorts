@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-10-24 - Session 9d (เช็ค run ทุกวันแบบไม่ต้องเปิด Claude · probe Groq ทุก run)
+
+Film ถามว่ามีอะไรเช็ค run เช้าให้เองไหม: ไม่มี. run ขึ้น `success` ทั้งที่โดน 429 + `shipping the closest` (10-24) เลยไม่มีเมลเตือน
+
+- `.github/workflows/daily.yml` step ใหม่ `Probe Groq fallback key` ก่อน generate: GET `/openai/v1/models` พิมพ์ `[probe] groq: <status>`
+  `continue-on-error` ไม่ทำ job ล้ม. push `a7c66847`. ทดสอบในเครื่อง: key ใน `.env` ได้ **200** (ไม่ใช่ 401 อย่างที่จด 9c), key ว่างได้ 401
+- อ่านผลที่รายงาน Telegram 19:00 ของ Moon (`G:\Moon\scripts\channel_report.py` ส่วน "🛠 run ไม่เคยสงสัย วันนี้", Moon Session 45):
+  model ที่เขียนสคริปต์ต่อคลิป, 429, ส่งตัวที่ใกล้สุด, ตกไป Groq, ผล probe. parser อิงบรรทัด log
+  `[Video N] ... publish→`, `[generator] <model>: N Thai words`, `[generator] <model> failed:`, `[Batch] Done`, `[probe]` แก้ข้อความพวกนี้ต้องแก้ parser ด้วย
+
+- รอบสำรอง 15:46 ได้ `[probe] groq: 200` = **secret บน GitHub ใช้ได้**
+- **`/code-review` เจอ Groq fallback ตายมาตลอด**: `llama-3.3-70b-versatile` ถูก Groq เลิกแล้ว (`model_not_found`) key ผ่านแต่ model ไม่มี.
+  วันที่ Gemini ล้มหมด = ไม่มีคลิป. แก้: `src/generator.py` ค่าคงที่ `GROQ_MODEL = "openai/gpt-oss-120b"`.
+  ลองจริงบน Groq 2 ตัว: gpt-oss-120b ตอบคอมเมนต์ได้ใน 200 token + JSON สคริปต์ 6 ประโยคผ่าน `_parse_json`
+  (ยาว 84 คำ เกินงบ 70 ยอมได้สำหรับชั้นสุดท้าย) · qwen3.8-27b แต่งข้อมูลในคำตอบคอมเมนต์ + ปิดโหมดคิดแล้วมีอักษรเกาหลีหลุดในประโยค
+- probe เปลี่ยนเป็น GET `/models/<GROQ_MODEL>` อ่านชื่อจากบรรทัดใน `generator.py` (200 ใช้ได้, 401 key, 404 model ถูกเลิก, 000 อ่านชื่อไม่ได้) ทดสอบครบ 4 กรณี
+- `PYTHONUNBUFFERED: '1'` ใน step generate: log เดิมทั้งก้อนลงเวลาเดียว stderr แซง และถ้า job timeout บรรทัดที่ค้าง buffer หายหมด
+
+### Next Step
+- 10-25: รายงาน 19:00 บอกเองว่า 3.8-flash ขึ้นไหม / 429 ที่ไหน. ถ้า 3.8-flash 503/429 บ่อย ทำตาม Next Step ข้อ 2 ของ 9c
+
+### Scope ใหม่ (ยังไม่ทำ)
+- `generate_batch` นับคลิปที่ข้าม (ไม่มี brief / ไม่มี footage) หรืออัปโหลดไม่สำเร็จเป็น "Done" และจบ run เป็น success เลยไม่ retry.
+  ทางแก้ที่ต้นเหตุ: ให้ `generate_one` raise หรือคืน False แล้ว exit 1 ตามจริง + พิมพ์บรรทัดสรุป JSON ท้าย run ให้ Moon อ่านแทนการ parse ข้อความ.
+  ไม่ได้ทำรอบนี้เพราะเปลี่ยนพฤติกรรม retry ของ pipeline จริง (ตอนนี้รายงาน Moon จับกรณีพวกนี้ได้แล้ว)
+
 ## 2026-10-24 - Session 9c (สคริปต์ย้ายไป 3.8-flash บน key เดิม · research อยู่ 2.5 · key project ใหม่ใช้กับ repo นี้ไม่ได้)
 
 Film: "เอา" กับแผน 9b (ย้าย key + 3.x, เทสต์ 3 สคริปต์ก่อน push)

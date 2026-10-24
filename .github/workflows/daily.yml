@@ -83,18 +83,24 @@ jobs:
           printf '%s' "$YOUTUBE_CLIENT_SECRETS" | sed '1s/^\xef\xbb\xbf//' > client_secrets.json
 
       # Groq is the last fallback and only gets called when every Gemini model
-      # has failed, so a dead key stays invisible until the one day it is
-      # needed. One authenticated GET per run puts its status in the log,
-      # where Moon's 19:00 channel report picks it up. Never fails the job.
-      - name: Probe Groq fallback key
+      # has failed, so a dead key or a retired model stays invisible until the
+      # one day it is needed. One authenticated GET for the exact model
+      # src/generator.py calls puts the status in the log (200 ok, 401 key,
+      # 404 model retired), where Moon's 19:00 channel report picks it up.
+      # Never fails the job.
+      - name: Probe Groq fallback (key + model)
         continue-on-error: true
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-            -H "Authorization: Bearer $GROQ_API_KEY" \
-            https://api.groq.com/openai/v1/models || true)
-          echo "[probe] groq: ${status:-000}"
+          model=$(sed -n 's/^GROQ_MODEL = "\(.*\)"$/\1/p' src/generator.py)
+          status=000
+          if [ -n "$model" ]; then
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+              -H "Authorization: Bearer $GROQ_API_KEY" \
+              "https://api.groq.com/openai/v1/models/$model" || true)
+          fi
+          echo "[probe] groq: ${status:-000} (${model:-model id not found})"
 
       - name: Generate & upload videos
         env:
@@ -109,6 +115,10 @@ jobs:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_VIDEO_LOG_DB_ID: ${{ secrets.NOTION_VIDEO_LOG_DB_ID }}
           ONLY_TODAY: ${{ github.event.schedule == '0 4 * * *' && '1' || '0' }}
+          # Without this, stdout is block-buffered on the runner: the whole log
+          # lands at one timestamp, stderr overtakes it, and a timed-out or
+          # killed job loses every buffered line Moon's report parses.
+          PYTHONUNBUFFERED: '1'
           # Scheduled runs always publish. A manual run can render the whole
           # pipeline on the real runner without spending a publish slot,
           # which is how a change gets checked before the cron meets it.
