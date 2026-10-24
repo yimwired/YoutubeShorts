@@ -82,6 +82,20 @@ jobs:
           printf '%s' "$YOUTUBE_TOKEN" | sed '1s/^\xef\xbb\xbf//' > token_youtube.json
           printf '%s' "$YOUTUBE_CLIENT_SECRETS" | sed '1s/^\xef\xbb\xbf//' > client_secrets.json
 
+      # Groq is the last fallback and only gets called when every Gemini model
+      # has failed, so a dead key stays invisible until the one day it is
+      # needed. One authenticated GET per run puts its status in the log,
+      # where Moon's 19:00 channel report picks it up. Never fails the job.
+      - name: Probe Groq fallback key
+        continue-on-error: true
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+            -H "Authorization: Bearer $GROQ_API_KEY" \
+            https://api.groq.com/openai/v1/models || true)
+          echo "[probe] groq: ${status:-000}"
+
       - name: Generate & upload videos
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
